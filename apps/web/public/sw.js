@@ -31,60 +31,39 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// Fetch event - network-first strategy for API, cache-first for static assets
+// Fetch event - network first strategy
 self.addEventListener("fetch", (event) => {
-  const { request } = event;
-  const url = new URL(request.url);
-
   // Skip non-GET requests
-  if (request.method !== "GET") return;
-
-  // Skip API requests and external URLs - always go to network
-  if (url.pathname.startsWith("/api/") || url.origin !== self.location.origin) {
-    return;
-  }
-
-  // For navigation requests (HTML pages) - network first, fall back to cache
-  if (request.mode === "navigate") {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-          return response;
-        })
-        .catch(() => caches.match(request).then((cached) => cached || caches.match("/"))),
-    );
-    return;
-  }
-
-  // For static assets - cache first, fall back to network
-  if (
-    url.pathname.startsWith("/_next/static/") ||
-    url.pathname.match(/\.(png|jpg|jpeg|svg|gif|ico|webp|woff2?|ttf|css|js)$/)
-  ) {
-    event.respondWith(
-      caches.match(request).then(
-        (cached) =>
-          cached ||
-          fetch(request).then((response) => {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-            return response;
-          }),
-      ),
-    );
-    return;
-  }
-
-  // Default: network first
+  if (event.request.method !== "GET") return;
+  
+  // Skip API requests
+  if (event.request.url.includes("/api/")) return;
+  
   event.respondWith(
-    fetch(request)
+    fetch(event.request)
       .then((response) => {
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+        // Clone the response
+        const responseToCache = response.clone();
+        
+        // Cache successful GET requests
+        if (response.status === 200) {
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
+        }
+        
         return response;
       })
-      .catch(() => caches.match(request)),
+      .catch(() => {
+        // Fallback to cache if network fails
+        return caches.match(event.request);
+      }),
   );
+});
+
+// Listen for skip waiting message
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
 });

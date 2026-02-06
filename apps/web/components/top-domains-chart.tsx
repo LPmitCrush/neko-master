@@ -1,7 +1,17 @@
 "use client";
 
-import { useState, useMemo, useRef } from "react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList } from "recharts";
+import { useState, useMemo, useRef, useEffect } from "react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
+  LabelList,
+} from "recharts";
 import { useTranslations } from "next-intl";
 import { BarChart3 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,14 +46,13 @@ function renderCustomBarLabel(props: any) {
   const { x, y, width, value, height } = props;
   return (
     <text
-      x={x + width + 6}
+      x={x + width + 5}
       y={y + height / 2}
       fill="currentColor"
-      fontSize={11}
+      fontSize={10}
       dominantBaseline="central"
       textAnchor="start"
-      style={{ fontVariantNumeric: "tabular-nums" }}
-    >
+      style={{ fontVariantNumeric: "tabular-nums" }}>
       {formatBytes(value, 0)}
     </text>
   );
@@ -55,22 +64,44 @@ export function TopDomainsChart({ data }: TopDomainsChartProps) {
   const [topN, setTopN] = useState<TopOption>(10);
   // Track whether this is the initial render to only animate on first load
   const hasRenderedRef = useRef(false);
+  // Track container width to hide labels on small screens
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerWidth(entry.contentRect.width);
+      }
+    });
+
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  // Show labels only when container is wide enough (> 400px)
+  const showLabels = containerWidth > 400;
 
   const chartData = useMemo(() => {
     if (!data) return [];
-    const result = data
-      .slice(0, topN)
-      .map((domain, index) => ({
-        name: domain.domain.length > 20 ? domain.domain.slice(0, 20) + "..." : domain.domain,
-        fullDomain: domain.domain,
-        total: domain.totalDownload + domain.totalUpload,
-        download: domain.totalDownload,
-        upload: domain.totalUpload,
-        color: COLORS[index % COLORS.length],
-      }));
+    const result = data.slice(0, topN).map((domain, index) => ({
+      name:
+        domain.domain.length > 15
+          ? domain.domain.slice(0, 15) + "..."
+          : domain.domain,
+      fullDomain: domain.domain,
+      total: domain.totalDownload + domain.totalUpload,
+      download: domain.totalDownload,
+      upload: domain.totalUpload,
+      color: COLORS[index % COLORS.length],
+    }));
     // After first data load, mark as rendered so subsequent updates skip animation
     if (result.length > 0) {
-      setTimeout(() => { hasRenderedRef.current = true; }, 800);
+      setTimeout(() => {
+        hasRenderedRef.current = true;
+      }, 800);
     }
     return result;
   }, [data, topN]);
@@ -82,20 +113,28 @@ export function TopDomainsChart({ data }: TopDomainsChartProps) {
         <div className="bg-background border border-border p-3 rounded-lg shadow-lg">
           <div className="flex items-center gap-2 mb-2">
             <Favicon domain={item.fullDomain} size="sm" />
-            <span className="font-medium text-sm text-foreground">{item.fullDomain}</span>
+            <span className="font-medium text-sm text-foreground">
+              {item.fullDomain}
+            </span>
           </div>
           <div className="space-y-1 text-xs">
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">{commonT("total")}:</span>
-              <span className="font-medium text-foreground">{formatBytes(item.total)}</span>
+              <span className="font-medium text-foreground">
+                {formatBytes(item.total)}
+              </span>
             </div>
             <div className="flex justify-between gap-4">
               <span className="text-blue-500">{commonT("download")}:</span>
-              <span className="text-foreground">{formatBytes(item.download)}</span>
+              <span className="text-foreground">
+                {formatBytes(item.download)}
+              </span>
             </div>
             <div className="flex justify-between gap-4">
               <span className="text-purple-500">{commonT("upload")}:</span>
-              <span className="text-foreground">{formatBytes(item.upload)}</span>
+              <span className="text-foreground">
+                {formatBytes(item.upload)}
+              </span>
             </div>
           </div>
         </div>
@@ -117,10 +156,15 @@ export function TopDomainsChart({ data }: TopDomainsChartProps) {
               {t("mostBandwidthConsuming")}
             </p>
           </div>
-          <Tabs value={topN.toString()} onValueChange={(v) => setTopN(parseInt(v) as TopOption)}>
+          <Tabs
+            value={topN.toString()}
+            onValueChange={(v) => setTopN(parseInt(v) as TopOption)}>
             <TabsList className="h-8">
               {TOP_OPTIONS.map((n) => (
-                <TabsTrigger key={n} value={n.toString()} className="text-xs px-3">
+                <TabsTrigger
+                  key={n}
+                  value={n.toString()}
+                  className="text-xs px-3">
                   Top {n}
                 </TabsTrigger>
               ))}
@@ -128,19 +172,23 @@ export function TopDomainsChart({ data }: TopDomainsChartProps) {
           </Tabs>
         </div>
       </CardHeader>
-      <CardContent>
-        <div className="h-[350px] w-full">
+      <CardContent ref={containerRef}>
+        <div className="h-[350px] w-full min-w-0 overflow-hidden sm:overflow-visible">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
               data={chartData}
               layout="vertical"
-              margin={{ top: 10, right: 60, left: 30, bottom: 10 }}
-            >
-              <CartesianGrid 
-                strokeDasharray="3 3" 
-                stroke="#888888" 
-                opacity={0.2} 
-                horizontal={false} 
+              margin={{
+                top: 10,
+                right: showLabels ? 60 : 10,
+                left: 0,
+                bottom: 10,
+              }}>
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke="#888888"
+                opacity={0.2}
+                horizontal={false}
               />
               <XAxis
                 type="number"
@@ -152,30 +200,32 @@ export function TopDomainsChart({ data }: TopDomainsChartProps) {
               <YAxis
                 type="category"
                 dataKey="name"
-                width={100}
-                tick={{ fontSize: 11, fill: "currentColor" }}
+                width={70}
+                tick={{ fontSize: 10, fill: "currentColor" }}
                 tickLine={false}
                 axisLine={false}
+                interval={0}
               />
-              <Tooltip 
-                content={<CustomTooltip />} 
-                cursor={{ fill: "rgba(128, 128, 128, 0.1)" }} 
+              <Tooltip
+                content={<CustomTooltip />}
+                cursor={{ fill: "rgba(128, 128, 128, 0.1)" }}
               />
               <Bar
                 dataKey="total"
                 radius={[0, 4, 4, 0]}
                 maxBarSize={32}
                 isAnimationActive={!hasRenderedRef.current}
-                animationDuration={600}
-              >
+                animationDuration={600}>
                 {chartData.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={entry.color} />
                 ))}
-                <LabelList
-                  dataKey="total"
-                  position="right"
-                  content={renderCustomBarLabel}
-                />
+                {showLabels && (
+                  <LabelList
+                    dataKey="total"
+                    position="right"
+                    content={renderCustomBarLabel}
+                  />
+                )}
               </Bar>
             </BarChart>
           </ResponsiveContainer>

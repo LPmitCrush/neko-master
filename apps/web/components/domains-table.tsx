@@ -189,7 +189,7 @@ export function DomainsTable({ data }: DomainsTableProps) {
   };
 
   return (
-    <div className="glass-card rounded-2xl overflow-hidden">
+    <div className="glass-card rounded-2xl overflow-hidden overflow-x-hidden">
       {/* Header */}
       <div className="p-4 sm:p-5 border-b border-border/50">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -293,7 +293,7 @@ export function DomainsTable({ data }: DomainsTableProps) {
                 {/* Desktop Row */}
                 <div
                   className={cn(
-                    "hidden sm:grid grid-cols-12 gap-3 px-5 py-4 items-center hover:bg-secondary/20 transition-colors cursor-pointer",
+                    "hidden sm:grid grid-cols-12 gap-3 px-5 py-4 items-center hover:bg-secondary/20 transition-colors cursor-pointer min-w-0",
                     isExpanded && "bg-secondary/10"
                   )}
                   style={{ animationDelay: `${index * 50}ms` }}
@@ -390,15 +390,12 @@ export function DomainsTable({ data }: DomainsTableProps) {
                   )}
                   onClick={() => toggleExpand(domain.domain)}
                 >
-                  {/* Top: Favicon + Domain + Expand */}
+                  {/* Row 1: Favicon + Domain (truncate) + IP Count */}
                   <div className="flex items-center gap-2.5 mb-2">
                     <Favicon domain={domain.domain} size="sm" className="shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm truncate">
                         {domain.domain || t("unknown")}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatDuration(domain.lastSeen)}
                       </p>
                     </div>
                     <Button
@@ -421,11 +418,11 @@ export function DomainsTable({ data }: DomainsTableProps) {
                     </Button>
                   </div>
 
-                  {/* Proxy info */}
+                  {/* Row 2: Proxy tag - full width, no truncation */}
                   {domain.chains && domain.chains.length > 0 && (
-                    <div className="flex items-center gap-1.5 mb-1.5 pl-[30px]">
+                    <div className="flex items-center gap-1.5 mb-2 pl-[30px]">
                       <span
-                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-orange-500/10 text-orange-600 dark:text-orange-400 text-[11px] font-medium truncate max-w-[120px]"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-500/10 text-orange-600 dark:text-orange-400 text-[11px] font-medium whitespace-nowrap"
                         title={domain.chains[0]}
                       >
                         <Waypoints className="h-2.5 w-2.5 shrink-0" />
@@ -439,11 +436,11 @@ export function DomainsTable({ data }: DomainsTableProps) {
                     </div>
                   )}
 
-                  {/* Bottom: Stats row */}
-                  <div className="flex items-center justify-between text-xs pl-[30px]">
+                  {/* Row 3: Traffic stats - compact layout */}
+                  <div className="flex items-center gap-3 text-[11px] pl-[30px]">
                     <span className="text-blue-500 tabular-nums">↓ {formatBytes(domain.totalDownload)}</span>
                     <span className="text-purple-500 tabular-nums">↑ {formatBytes(domain.totalUpload)}</span>
-                    <span className="px-2 py-0.5 rounded-full bg-secondary text-muted-foreground font-medium">
+                    <span className="text-muted-foreground tabular-nums ml-auto">
                       {formatNumber(domain.totalConnections)} {t("conn")}
                     </span>
                   </div>
@@ -498,7 +495,7 @@ export function DomainsTable({ data }: DomainsTableProps) {
                                       style={{ width: `${Math.max(percent * (uploadPercent / 100), 0.5)}%` }}
                                     />
                                   </div>
-                                  <div className="flex items-center gap-3 text-[11px] tabular-nums">
+                                  <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[11px] tabular-nums">
                                     <span className="text-blue-500">↓ {formatBytes(ps.totalDownload)}</span>
                                     <span className="text-purple-500">↑ {formatBytes(ps.totalUpload)}</span>
                                     <span className="text-muted-foreground">{formatNumber(ps.totalConnections)} {t("conn")}</span>
@@ -512,10 +509,13 @@ export function DomainsTable({ data }: DomainsTableProps) {
                             {domain.chains.map((chain) => (
                               <span
                                 key={chain}
-                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-orange-500/10 text-orange-600 dark:text-orange-400 text-xs font-medium"
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-orange-500/10 text-orange-600 dark:text-orange-400 text-xs font-medium max-w-full min-w-0"
+                                title={chain}
                               >
                                 <Waypoints className="h-3 w-3 shrink-0" />
-                                {chain}
+                                <span className="truncate min-w-0">
+                                  {chain}
+                                </span>
                               </span>
                             ))}
                           </div>
@@ -571,8 +571,8 @@ export function DomainsTable({ data }: DomainsTableProps) {
                                         style={{ width: `${Math.max(percent * (uploadPercent / 100), 0.5)}%` }}
                                       />
                                     </div>
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-3 text-[11px] tabular-nums">
+                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-0">
+                                      <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[11px] tabular-nums">
                                         <span className="text-blue-500">↓ {formatBytes(ipStat.totalDownload)}</span>
                                         <span className="text-purple-500">↑ {formatBytes(ipStat.totalUpload)}</span>
                                         <span className="text-muted-foreground">{formatNumber(ipStat.totalConnections)} conn</span>

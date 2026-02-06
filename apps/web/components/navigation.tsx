@@ -9,10 +9,7 @@ import {
   MapPin,
   Server,
   Route,
-  Network,
   Settings,
-  Menu,
-  X,
   Info,
   ExternalLink,
   ArrowUpCircle,
@@ -32,6 +29,7 @@ import { useVersionCheck } from "@/hooks/use-version-check";
 interface NavigationProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
+  onBackendChange?: () => void;
 }
 
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.0.0";
@@ -43,11 +41,9 @@ const NAV_ITEMS = [
   { id: "countries", icon: MapPin },
   { id: "proxies", icon: Server },
   { id: "rules", icon: Route },
-  { id: "network", icon: Network },
 ];
 
-export function Navigation({ activeTab, onTabChange }: NavigationProps) {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+export function Navigation({ activeTab, onTabChange, onBackendChange }: NavigationProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const t = useTranslations("nav");
@@ -63,7 +59,7 @@ export function Navigation({ activeTab, onTabChange }: NavigationProps) {
       <aside className="hidden lg:flex flex-col w-64 h-screen sticky top-0 border-r border-border/40 bg-background/80 backdrop-blur-md">
         {/* Logo */}
         <div className="flex items-center gap-3 p-6 border-b border-border/40">
-          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center overflow-hidden">
+          <div className="w-16 h-16 rounded-xl  flex items-center justify-center overflow-hidden hover:opacity-80">
             <Image
               src="/clash-master.png"
               alt="Clash Master"
@@ -73,8 +69,8 @@ export function Navigation({ activeTab, onTabChange }: NavigationProps) {
             />
           </div>
           <div>
-            <h1 className="font-bold text-lg">{headerT("title")}</h1>
-            <p className="text-xs text-muted-foreground">
+            <h1 className="font-bold text-xl">{headerT("title")}</h1>
+            <p className="text-xs text-muted-foreground/60">
               {headerT("subtitle")}
             </p>
           </div>
@@ -134,69 +130,6 @@ export function Navigation({ activeTab, onTabChange }: NavigationProps) {
         </div>
       </aside>
 
-      {/* Mobile Navigation - Header */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 z-50 border-b border-border/40 bg-background/80 backdrop-blur-md">
-        <div className="flex items-center justify-between h-14 px-4">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center overflow-hidden">
-              <Image
-                src="/clash-master.png"
-                alt="Clash Master"
-                width={32}
-                height={32}
-                className="w-full h-full object-cover"
-              />
-            </div>
-            <h1 className="font-bold">{headerT("title")}</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setSettingsOpen(true)}>
-              <Settings className="w-5 h-5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
-              {mobileMenuOpen ? (
-                <X className="w-5 h-5" />
-              ) : (
-                <Menu className="w-5 h-5" />
-              )}
-            </Button>
-          </div>
-        </div>
-
-        {/* Mobile Menu */}
-        {mobileMenuOpen && (
-          <nav className="absolute top-full left-0 right-0 bg-background border-b border-border/40 p-4 space-y-1">
-            {NAV_ITEMS.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    onTabChange(item.id);
-                    setMobileMenuOpen(false);
-                  }}
-                  className={cn(
-                    "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all",
-                    isActive
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-secondary",
-                  )}>
-                  <Icon className="w-5 h-5" />
-                  {t(item.id)}
-                </button>
-              );
-            })}
-          </nav>
-        )}
-      </header>
-
       {/* Mobile Bottom Navigation */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-border/40 bg-background/80 backdrop-blur-md">
         <div className="flex items-center justify-around h-16 px-2">
@@ -224,6 +157,7 @@ export function Navigation({ activeTab, onTabChange }: NavigationProps) {
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
         isFirstTime={false}
+        onBackendChange={onBackendChange}
       />
 
       {/* About Dialog */}
@@ -273,28 +207,25 @@ export function Navigation({ activeTab, onTabChange }: NavigationProps) {
                   href={GITHUB_URL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center justify-between p-3 rounded-xl border min-h-[3rem] bg-emerald-500/5 border-emerald-500/20 hover:bg-emerald-500/10 transition-colors group"
-                >
+                  className="flex items-center justify-between p-3 rounded-xl border min-h-[3rem] bg-emerald-500/5 border-emerald-500/20 hover:bg-emerald-500/10 transition-colors group">
                   <div>
                     <span className="text-sm font-medium">
                       {aboutT("latestVersion")}
                     </span>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {aboutT("updateAvailable")} · v{APP_VERSION} → v{latestVersion}
+                      {aboutT("updateAvailable")} · v{APP_VERSION} → v
+                      {latestVersion}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 h-7 shrink-0">
                     <span className="text-sm font-mono tabular-nums text-emerald-500 font-semibold flex items-center gap-1.5">
-                      <ArrowUpCircle className="w-4 h-4" />
-                      v{latestVersion}
+                      <ArrowUpCircle className="w-4 h-4" />v{latestVersion}
                     </span>
                     <ExternalLink className="w-3.5 h-3.5 text-emerald-500 group-hover:translate-x-0.5 transition-transform" />
                   </div>
                 </a>
               ) : (
-                <div
-                  className="flex items-center justify-between p-3 rounded-xl border min-h-[3rem] bg-secondary/50 border-border/50"
-                >
+                <div className="flex items-center justify-between p-3 rounded-xl border min-h-[3rem] bg-secondary/50 border-border/50">
                   <span className="text-sm font-medium">
                     {aboutT("latestVersion")}
                   </span>

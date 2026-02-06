@@ -33,8 +33,14 @@ export function useStatsWebSocket(options: UseWebSocketOptions = {}) {
 
     setStatus('connecting');
 
-    // Try multiple possible WebSocket URLs
-    const wsUrl = 'ws://localhost:3002';
+    // Support dynamic WebSocket URL configuration
+    // Priority: NEXT_PUBLIC_WS_URL > host-relative WS > default localhost
+    const wsPort = process.env.NEXT_PUBLIC_WS_PORT || '3002';
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL 
+      ? process.env.NEXT_PUBLIC_WS_URL
+      : typeof window !== 'undefined' 
+        ? `ws://${window.location.hostname}:${wsPort}`
+        : `ws://localhost:${wsPort}`;
     
     console.log('[WebSocket] Connecting to:', wsUrl);
 

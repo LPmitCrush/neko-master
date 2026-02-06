@@ -22,7 +22,7 @@
     "refresh": "刷新",
     "loading": "加载统计数据...",
     "error": "加载统计数据失败",
-    "errorHint": "请确保数据收集服务在 3001 端口运行",
+    "errorHint": "请确保后端 API 服务已启动且网络连接正常",
     "trafficTrend": "流量趋势",
     "topDomainsChart": "热门域名图表",
     "proxyDistribution": "代理节点分布",
@@ -216,7 +216,8 @@
     "confirm": "确认",
     "edit": "编辑",
     "delete": "删除",
-    "ok": "确定"
+    "ok": "确定",
+    "success": "成功"
   },
   "settings": {
     "title": "设置",
@@ -284,6 +285,7 @@
     "setDisplay": "设为显示",
     "selectBackend": "选择后端",
     "manageBackends": "管理后端",
-    "firstBackendAutoActive": "第一个后端已自动设为显示"
+    "firstBackendAutoActive": "第一个后端已自动设为显示",
+    "verificationFailed": "后端验证失败，请检查地址和令牌是否正确"
   }
 }

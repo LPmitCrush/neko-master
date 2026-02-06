@@ -56,14 +56,11 @@ const getIPGradient = (ip: string) => {
   return colors[Math.abs(hash) % colors.length];
 };
 
-// Simplify proxy name - remove all emojis and brackets like TopProxiesSimple
+// Keep original proxy name - preserve emojis and special characters
 function simplifyProxyName(name: string): string {
   if (!name) return "DIRECT";
-  return name
-    .replace(/[✈️🚀📹🚚🏠🐟🛡️⭐💎🔥⚡💨🌟🇨🇳🇺🇸🇯🇵🇭🇰🇸🇬🇬🇧🇩🇪🇫🇷🇹🇼🇰🇷]/gu, "")
-    .replace(/^\s+|\s+$/g, "")
-    .replace(/^\[.*?\]\s*/, "")
-    .trim();
+  // Keep original name with emojis, just trim whitespace
+  return name.trim();
 }
 
 // Get emoji for proxy
@@ -162,6 +159,7 @@ export function InteractiveProxyStats({ data, activeBackendId }: InteractiveProx
   const [ipPage, setIpPage] = useState(1);
   const [ipPageSize, setIpPageSize] = useState<PageSize>(10);
   const [ipSearch, setIpSearch] = useState("");
+  const [showDomainBarLabels, setShowDomainBarLabels] = useState(true);
 
   // Sort states
   const [domainSortKey, setDomainSortKey] = useState<DomainSortKey>("totalDownload");
@@ -172,6 +170,14 @@ export function InteractiveProxyStats({ data, activeBackendId }: InteractiveProx
   // Expanded states
   const [expandedDomain, setExpandedDomain] = useState<string | null>(null);
   const [expandedIP, setExpandedIP] = useState<string | null>(null);
+
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 640px)");
+    const update = () => setShowDomainBarLabels(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
 
   const chartData = useMemo(() => {
     if (!data) return [];
@@ -352,7 +358,7 @@ export function InteractiveProxyStats({ data, activeBackendId }: InteractiveProx
     return proxyDomains
       .slice(0, 10)
       .map((domain, index) => ({
-        name: domain.domain.length > 22 ? domain.domain.slice(0, 22) + "..." : domain.domain,
+        name: domain.domain.length > 15 ? domain.domain.slice(0, 15) + "..." : domain.domain,
         fullDomain: domain.domain,
         total: domain.totalDownload + domain.totalUpload,
         download: domain.totalDownload,
@@ -399,7 +405,7 @@ export function InteractiveProxyStats({ data, activeBackendId }: InteractiveProx
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 overflow-x-hidden">
       {/* Top Section: Three Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left: Pie Chart (3 columns) */}
@@ -431,7 +437,7 @@ export function InteractiveProxyStats({ data, activeBackendId }: InteractiveProx
                         const item = payload[0].payload;
                         return (
                           <div className="bg-background border border-border p-3 rounded-lg shadow-lg">
-                            <p className="font-medium text-sm mb-1">{item.emoji} {item.name}</p>
+                            <p className="font-medium text-sm mb-1">{item.name}</p>
                             <p className="text-xs text-muted-foreground">{formatBytes(item.value)}</p>
                           </div>
                         );
@@ -511,8 +517,8 @@ export function InteractiveProxyStats({ data, activeBackendId }: InteractiveProx
                         />
                       </div>
                       {/* Stats */}
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center justify-between gap-1 text-xs text-muted-foreground">
+                        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                           <span className="text-blue-500 dark:text-blue-400">↓ {formatBytes(item.download)}</span>
                           <span className="text-purple-500 dark:text-purple-400">↑ {formatBytes(item.upload)}</span>
                           <span className="flex items-center gap-1 tabular-nums">
@@ -541,7 +547,7 @@ export function InteractiveProxyStats({ data, activeBackendId }: InteractiveProx
               </CardTitle>
               {selectedProxyData && (
                 <span className="text-xs text-muted-foreground">
-                  {selectedProxyData.emoji} {selectedProxyData.name}
+                  {selectedProxyData.name}
                 </span>
               )}
             </div>
@@ -556,12 +562,12 @@ export function InteractiveProxyStats({ data, activeBackendId }: InteractiveProx
                 {domainsT("noResults")}
               </div>
             ) : (
-              <div className="h-[280px] w-full">
+              <div className="h-[280px] w-full min-w-0 overflow-hidden sm:overflow-visible">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={domainChartData}
                     layout="vertical"
-                    margin={{ top: 5, right: 50, left: 5, bottom: 5 }}
+                    margin={{ top: 5, right: showDomainBarLabels ? 50 : 10, left: 5, bottom: 5 }}
                   >
                     <CartesianGrid 
                       strokeDasharray="3 3" 
@@ -577,13 +583,13 @@ export function InteractiveProxyStats({ data, activeBackendId }: InteractiveProx
                       axisLine={false}
                     />
                     <YAxis
-                      type="category"
-                      dataKey="name"
-                      width={110}
-                      tick={{ fontSize: 11, fill: "currentColor" }}
-                      tickLine={false}
-                      axisLine={false}
-                    />
+                type="category"
+                dataKey="name"
+                width={90}
+                tick={{ fontSize: 10, fill: "currentColor" }}
+                tickLine={false}
+                axisLine={false}
+              />
                     <RechartsTooltip 
                       content={({ active, payload }) => {
                         if (active && payload && payload.length) {
@@ -629,15 +635,17 @@ export function InteractiveProxyStats({ data, activeBackendId }: InteractiveProx
                       {domainChartData.map((entry, index) => (
                         <BarCell key={`cell-${index}`} fill={entry.color} />
                       ))}
+                    {showDomainBarLabels && (
                       <LabelList
                         dataKey="total"
                         position="right"
                         content={renderCustomBarLabel}
                       />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+                    )}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
             )}
           </CardContent>
         </Card>

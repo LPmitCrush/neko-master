@@ -34,25 +34,14 @@ Throughout the entire development process, I didn't write a single line of code 
 
 ## 📋 Table of Contents
 
-- [🤔 Preface](#-preface)
-- [📋 Table of Contents](#-table-of-contents)
-- [✨ Features](#-features)
 - [🚀 Quick Start](#-quick-start)
-  - [Option 1: Docker Compose (Recommended)](#option-1-docker-compose-recommended)
-  - [Option 2: Docker Run](#option-2-docker-run)
-  - [Option 3: Source Code](#option-3-source-code)
 - [📖 First Use](#-first-use)
+- [🔧 Port Conflict Resolution](#-port-conflict-resolution)
 - [🐳 Docker Configuration](#-docker-configuration)
-  - [Ports](#ports)
-  - [Data Persistence](#data-persistence)
-  - [Custom Ports](#custom-ports)
-  - [Update to Latest](#update-to-latest)
+- [❓ FAQ](#-faq)
 - [📁 Project Structure](#-project-structure)
-- [🔧 FAQ](#-faq)
 - [🛠️ Tech Stack](#️-tech-stack)
-- [🤝 Contributing](#-contributing)
 - [📄 License](#-license)
-- [⭐ Star History](#-star-history)
 
 ## ✨ Features
 
@@ -69,9 +58,27 @@ Throughout the entire development process, I didn't write a single line of code 
 
 ## 🚀 Quick Start
 
-### Option 1: Docker Compose (Recommended)
+### Option 1: One-Click Setup Script (Recommended)
 
-No need to clone the repo. Just create a `docker-compose.yml` file:
+The easiest way - automatically detects port conflicts and configures:
+
+```bash
+# Download and run
+curl -fsSL https://raw.githubusercontent.com/foru17/clash-master/main/setup.sh | bash
+
+# Or use wget
+wget -qO- https://raw.githubusercontent.com/foru17/clash-master/main/setup.sh | bash
+```
+
+The script will automatically:
+- ✅ Check if default ports (3000/3001/3002) are in use
+- ✅ Suggest available alternative ports
+- ✅ Create configuration file
+- ✅ Start the service
+
+### Option 2: Docker Compose (Manual)
+
+Create a `docker-compose.yml` file:
 
 ```yaml
 services:
@@ -147,6 +154,54 @@ pnpm install
 
 > 💡 **Get OpenClash Address**: OpenClash Plugin → Enable "External Control" → Copy address
 
+## 🔧 Port Conflict Resolution
+
+If you see "port already in use" error, here are the solutions:
+
+### Solution 1: Use One-Click Script (Easiest)
+
+```bash
+./setup.sh
+```
+
+The script will automatically detect and suggest available ports.
+
+### Solution 2: Use .env File
+
+Create a `.env` file:
+
+```bash
+cp .env.example .env
+```
+
+Modify ports to your preferred values:
+
+```env
+WEB_EXTERNAL_PORT=8080    # Change Web UI port
+API_EXTERNAL_PORT=8081    # Change API port
+WS_EXTERNAL_PORT=8082     # Change WebSocket port
+```
+
+Then restart:
+
+```bash
+docker compose down
+docker compose up -d
+```
+
+Now access http://localhost:8080
+
+### Solution 3: Directly modify docker-compose.yml
+
+```yaml
+ports:
+  - "8080:3000"  # External 8080 → Internal 3000
+  - "8081:3001"  # External 8081 → Internal 3001
+  - "8082:3002"  # External 8082 → Internal 3002
+environment:
+  - NEXT_PUBLIC_WS_PORT=8082  # Tell frontend to use 8082
+```
+
 ## 🐳 Docker Configuration
 
 ### Ports
@@ -164,17 +219,6 @@ Data is stored in `/app/data` inside the container. Mount it to host to prevent 
 ```yaml
 volumes:
   - ./data:/app/data
-```
-
-### Custom Ports
-
-Create `docker-compose.override.yml` to customize ports:
-
-```yaml
-services:
-  clash-master:
-    ports:
-      - "8080:3000" # Map 3000 to host's 8080
 ```
 
 ### Update to Latest
@@ -203,50 +247,62 @@ clash-master/
     └── shared/             # Shared types and utilities
 ```
 
-## 🔧 FAQ
+## ❓ FAQ
 
-<details>
-<summary><b>Q: Failed to connect to OpenClash?</b></summary>
+### Q: "Port already in use" error?
 
-Check the following:
+**A:** Use the one-click setup script, it will automatically detect and suggest available ports:
 
+```bash
+./setup.sh
+```
+
+Or manually modify ports in `.env` file.
+
+### Q: Cannot access after changing ports?
+
+**A:** Make sure three things:
+1. Ports are modified in `.env` file
+2. Service is restarted: `docker compose restart`
+3. You're using the new port (e.g., `http://localhost:8080`)
+
+### Q: Failed to connect to OpenClash?
+
+**A:** Check the following:
 1. Is "External Control" enabled in OpenClash?
 2. Is the OpenClash address correct? (Format: `IP:Port`)
 3. If Secret is configured, is the Token correct?
 4. Can the container access OpenClash's network? (Check firewall settings)
 
-</details>
+### Q: How to view service logs?
 
-<details>
-<summary><b>Q: How to backup data?</b></summary>
+**A:**
+```bash
+# View all logs
+docker logs -f clash-master
 
-Data is stored in the mapped directory (default `./data/stats.db`). Simply backup this directory:
+# View last 100 lines
+docker logs --tail 100 clash-master
+```
+
+### Q: How to backup data?
+
+**A:** Data is stored in the mapped directory (default `./data/stats.db`):
 
 ```bash
 cp -r ./data ./data-backup-$(date +%Y%m%d)
 ```
 
-</details>
+### Q: How to clean up historical data?
 
-<details>
-<summary><b>Q: How to clean up historical data?</b></summary>
-
+**A:**
 1. Click "Backend Config" at the bottom of the left sidebar
 2. Switch to the "Database" tab
 3. Select cleanup range: 1 day / 7 days / 30 days / All
 
-</details>
+### Q: Support ARM architecture?
 
-<details>
-<summary><b>Q: Support remote access?</b></summary>
-
-Yes. Map Docker ports to public IP to access remotely. Recommendations:
-
-- Use Nginx reverse proxy
-- Enable HTTPS encryption
-- Configure authentication
-
-</details>
+**A:** Docker images support `linux/amd64` and `linux/arm64`.
 
 ## 🛠️ Tech Stack
 

@@ -8,6 +8,9 @@ RUN apk add --no-cache python3 make g++ gcc && \
 # Set working directory
 WORKDIR /app
 
+# Disable Next.js telemetry
+ENV NEXT_TELEMETRY_DISABLED=1
+
 # Copy package files
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
 COPY apps/collector/package.json ./apps/collector/
@@ -26,7 +29,8 @@ RUN pnpm --filter @clashmaster/shared build
 # Build collector
 RUN pnpm --filter @clashmaster/collector build
 
-# Build web
+# Build web with production env for PWA
+ENV NODE_ENV=production
 RUN pnpm --filter @clashmaster/web build
 
 # Production stage

@@ -185,13 +185,15 @@ export function IPsTable({ data }: IPsTableProps) {
   };
 
   return (
-    <div className="glass-card rounded-2xl overflow-hidden">
+    <div className="glass-card rounded-2xl overflow-hidden overflow-x-hidden">
       {/* Header */}
       <div className="p-4 sm:p-5 border-b border-border/50">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <h3 className="text-lg font-semibold">{t("title")}</h3>
-            <p className="text-sm text-muted-foreground">{t("topIPsByTraffic")}</p>
+            <p className="text-sm text-muted-foreground">
+              {filteredData.length} {t("ipsCount")}
+            </p>
           </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -287,7 +289,7 @@ export function IPsTable({ data }: IPsTableProps) {
                 {/* Desktop Row */}
                 <div
                   className={cn(
-                    "hidden sm:grid grid-cols-12 gap-3 px-5 py-4 items-center hover:bg-secondary/20 transition-colors cursor-pointer",
+                    "hidden sm:grid grid-cols-12 gap-3 px-5 py-4 items-center hover:bg-secondary/20 transition-colors cursor-pointer min-w-0",
                     isExpanded && "bg-secondary/10"
                   )}
                   style={{ animationDelay: `${index * 50}ms` }}
@@ -391,19 +393,13 @@ export function IPsTable({ data }: IPsTableProps) {
                   )}
                   onClick={() => toggleExpand(ip.ip)}
                 >
-                  {/* Top: IP Icon + IP + Location + Expand */}
+                  {/* Row 1: IP Icon + IP (truncate) + Domain Count */}
                   <div className="flex items-center gap-2.5 mb-2">
                     <div className={`w-5 h-5 rounded-md ${ipColor.bg} ${ipColor.text} flex items-center justify-center shrink-0`}>
                       <Server className="w-3 h-3" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <code className="text-sm font-medium truncate block">{ip.ip}</code>
-                      {ip.geoIP && ip.geoIP.length > 0 && (
-                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <span className="text-sm">{getCountryFlag(ip.geoIP[0])}</span>
-                          <span className="truncate">{ip.geoIP[1] || ip.geoIP[0]}</span>
-                        </div>
-                      )}
                     </div>
                     <Button
                       variant="ghost"
@@ -425,29 +421,35 @@ export function IPsTable({ data }: IPsTableProps) {
                     </Button>
                   </div>
 
-                  {/* Proxy info */}
-                  {ip.chains && ip.chains.length > 0 && (
-                    <div className="flex items-center gap-1.5 mb-1.5 pl-[38px]">
+                  {/* Row 2: Location + Proxy tag */}
+                  <div className="flex items-center gap-2 mb-2 pl-[30px] flex-wrap">
+                    {ip.geoIP && ip.geoIP.length > 0 && (
+                      <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                        <span>{getCountryFlag(ip.geoIP[0])}</span>
+                        <span className="truncate">{ip.geoIP[1] || ip.geoIP[0]}</span>
+                      </span>
+                    )}
+                    {ip.chains && ip.chains.length > 0 && (
                       <span
-                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-orange-500/10 text-orange-600 dark:text-orange-400 text-[11px] font-medium truncate max-w-[120px]"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-500/10 text-orange-600 dark:text-orange-400 text-[11px] font-medium whitespace-nowrap"
                         title={ip.chains[0]}
                       >
                         <Waypoints className="h-2.5 w-2.5 shrink-0" />
                         {ip.chains[0]}
                       </span>
-                      {ip.chains.length > 1 && (
-                        <span className="text-[11px] text-muted-foreground shrink-0">
-                          +{ip.chains.length - 1}
-                        </span>
-                      )}
-                    </div>
-                  )}
+                    )}
+                    {ip.chains && ip.chains.length > 1 && (
+                      <span className="text-[11px] text-muted-foreground">
+                        +{ip.chains.length - 1}
+                      </span>
+                    )}
+                  </div>
 
-                  {/* Bottom: Stats row */}
-                  <div className="flex items-center justify-between text-xs pl-[38px]">
+                  {/* Row 3: Traffic stats - compact layout */}
+                  <div className="flex items-center gap-3 text-[11px] pl-[30px]">
                     <span className="text-blue-500 tabular-nums">↓ {formatBytes(ip.totalDownload)}</span>
                     <span className="text-purple-500 tabular-nums">↑ {formatBytes(ip.totalUpload)}</span>
-                    <span className="px-2 py-0.5 rounded-full bg-secondary text-muted-foreground font-medium">
+                    <span className="text-muted-foreground tabular-nums ml-auto">
                       {formatNumber(ip.totalConnections)} {t("conn")}
                     </span>
                   </div>
@@ -500,7 +502,7 @@ export function IPsTable({ data }: IPsTableProps) {
                                       style={{ width: `${Math.max(percent * (uploadPercent / 100), 0.5)}%` }}
                                     />
                                   </div>
-                                  <div className="flex items-center gap-3 text-[11px] tabular-nums">
+                                  <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[11px] tabular-nums">
                                     <span className="text-blue-500">↓ {formatBytes(ps.totalDownload)}</span>
                                     <span className="text-purple-500">↑ {formatBytes(ps.totalUpload)}</span>
                                     <span className="text-muted-foreground">{formatNumber(ps.totalConnections)} {t("conn")}</span>
@@ -514,10 +516,13 @@ export function IPsTable({ data }: IPsTableProps) {
                             {ip.chains.map((chain) => (
                               <span
                                 key={chain}
-                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-orange-500/10 text-orange-600 dark:text-orange-400 text-xs font-medium"
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-orange-500/10 text-orange-600 dark:text-orange-400 text-xs font-medium max-w-full min-w-0"
+                                title={chain}
                               >
                                 <Waypoints className="h-3 w-3 shrink-0" />
-                                {chain}
+                                <span className="truncate min-w-0">
+                                  {chain}
+                                </span>
                               </span>
                             ))}
                           </div>

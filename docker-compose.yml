@@ -1,16 +1,14 @@
 services:
   clash-master:
     image: foru17/clash-master:latest
-    # Uncomment below to build locally instead of pulling from Docker Hub
-    # build:
-    #   context: .
-    #   dockerfile: Dockerfile
     container_name: clash-master
     restart: unless-stopped
     ports:
-      - "3000:3000"   # Web UI
-      - "3001:3001"   # API
-      - "3002:3002"   # WebSocket
+      # 外部端口 : 内部端口
+      # 如果端口被占用，修改 .env 文件或环境变量即可
+      - "${WEB_EXTERNAL_PORT:-3000}:3000"   # Web UI
+      - "${API_EXTERNAL_PORT:-3001}:3001"   # API
+      - "${WS_EXTERNAL_PORT:-3002}:3002"    # WebSocket
     volumes:
       - ./data:/app/data
     environment:
@@ -18,4 +16,19 @@ services:
       - WEB_PORT=3000
       - API_PORT=3001
       - COLLECTOR_WS_PORT=3002
+      # 告诉前端浏览器应该连接哪个 WebSocket 端口
+      - NEXT_PUBLIC_WS_PORT=${WS_EXTERNAL_PORT:-3002}
       - DB_PATH=/app/data/stats.db
+    networks:Open Source Project
+      - clash-master-network
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  clash-master-network:
+    driver: bridge

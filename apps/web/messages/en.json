@@ -22,7 +22,7 @@
     "refresh": "Refresh",
     "loading": "Loading statistics...",
     "error": "Failed to load statistics",
-    "errorHint": "Make sure the collector service is running on port 3001",
+    "errorHint": "Make sure the backend API service is running and network connection is normal",
     "trafficTrend": "Traffic Trend",
     "topDomainsChart": "Top Domains Chart",
     "proxyDistribution": "Proxy Distribution",
@@ -193,7 +193,7 @@
     "projectName": "Clash Master",
     "description": "Modern and beautiful traffic analysis dashboard for OpenClash",
     "github": "GitHub",
-    "openSource": "Open Source Project",
+    "openSource": "Clash Master",
     "license": "MIT License",
     "currentVersion": "Current Version",
     "latestVersion": "Latest Version",
@@ -217,7 +217,8 @@
     "confirm": "Confirm",
     "edit": "Edit",
     "delete": "Delete",
-    "ok": "OK"
+    "ok": "OK",
+    "success": "Success"
   },
   "settings": {
     "title": "Settings",
@@ -285,6 +286,7 @@
     "setDisplay": "Set Display",
     "selectBackend": "Select Backend",
     "manageBackends": "Manage Backends",
-    "firstBackendAutoActive": "First backend automatically set as active"
+    "firstBackendAutoActive": "First backend automatically set as active",
+    "verificationFailed": "Backend verification failed. Please check the host address and token."
   }
 }

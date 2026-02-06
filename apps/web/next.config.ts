@@ -5,27 +5,82 @@ import { join } from "path";
 
 const withNextIntl = createNextIntlPlugin();
 
-// Read version from root package.json (same file GitHub version check fetches)
+// Read version from root package.json
 const rootPkg = JSON.parse(
   readFileSync(join(__dirname, "../../package.json"), "utf-8"),
 );
 
-const API_URL = process.env.API_URL || "http://localhost:3001";
+// API URL configuration
+// - For local dev (default): http://localhost:3001
+// - For Docker/custom: set API_URL env variable
+// - Can use absolute URL (with protocol) or relative path
+const apiUrl = process.env.API_URL || "http://localhost:3001";
+const API_DESTINATION = apiUrl.endsWith('/api')
+  ? `${apiUrl}/:path*` 
+  : `${apiUrl}/api/:path*`;
 
+// Base Next.js config
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   output: 'standalone',
   env: {
     NEXT_PUBLIC_APP_VERSION: rootPkg.version || "0.0.0",
+    // Expose WebSocket port to browser (for client-side use)
+    NEXT_PUBLIC_WS_PORT: process.env.NEXT_PUBLIC_WS_PORT || "3002",
   },
   async rewrites() {
     return [
       {
         source: "/api/:path*",
-        destination: `${API_URL}/api/:path*`,
+        destination: API_DESTINATION,
+      },
+    ];
+  },
+  async headers() {
+    return [
+      {
+        source: "/manifest.json",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=0, must-revalidate",
+          },
+        ],
+      },
+      {
+        source: "/sw.js",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=0, must-revalidate",
+          },
+          {
+            key: "Service-Worker-Allowed",
+            value: "/",
+          },
+        ],
       },
     ];
   },
 };
 
-export default withNextIntl(nextConfig);
+// Apply PWA in production only
+let finalConfig = withNextIntl(nextConfig);
+
+if (process.env.NODE_ENV === "production") {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const withPWA = require("@ducanh2912/next-pwa");
+    finalConfig = withPWA({
+      dest: "public",
+      register: true,
+      skipWaiting: true,
+      disable: false,
+      buildExcludes: [/middleware-manifest.json$/],
+    })(finalConfig);
+  } catch {
+    // PWA not available, use base config
+  }
+}
+
+export default finalConfig;

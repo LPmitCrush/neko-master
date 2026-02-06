@@ -3,6 +3,7 @@
   "short_name": "Clash Master",
   "description": "Modern and beautiful traffic analysis dashboard for OpenClash",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0B0F19",
   "theme_color": "#3B82F6",

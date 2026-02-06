@@ -1,6 +1,6 @@
 import { defineConfig, globalIgnores } from "eslint/config";
-import { default as nextVitals } from "eslint-config-next/core-web-vitals";
-import { default as nextTs } from "eslint-config-next/typescript";
+import { default as nextVitals } from "eslint-config-next/core-web-vitals.js";
+import { default as nextTs } from "eslint-config-next/typescript.js";
 
 const eslintConfig = defineConfig([
   ...nextVitals,

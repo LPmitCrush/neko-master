@@ -35,6 +35,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn, formatBytes, formatNumber } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { toast } from "sonner";
+import { BackendVerifyAnimation } from "./backend-verify-animation";
 
 interface Backend {
   id: number;
@@ -114,6 +116,16 @@ export function BackendConfigDialog({
   const [errorDialogOpen, setErrorDialogOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   
+  // Success Alert Dialog State
+  const [successDialogOpen, setSuccessDialogOpen] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+
+  // Verify Animation State
+  const [showVerifyAnimation, setShowVerifyAnimation] = useState(false);
+  const [verifyPhase, setVerifyPhase] = useState<"pending" | "success" | "error">("pending");
+  const [verifyMessage, setVerifyMessage] = useState("");
+  const [pendingBackend, setPendingBackend] = useState<{ name: string; url: string; token: string } | null>(null);
+  
   const [formData, setFormData] = useState({
     name: "",
     host: "",
@@ -155,32 +167,70 @@ export function BackendConfigDialog({
   const handleAdd = async () => {
     if (!formData.name || !formData.host) return;
     
-    setLoading(true);
+    const url = buildUrl(formData.host, formData.port, formData.ssl);
+    
+    // Show verification animation immediately
+    setPendingBackend({ name: formData.name, url, token: formData.token });
+    setVerifyPhase("pending");
+    setVerifyMessage("");
+    setShowVerifyAnimation(true);
+    
+    // Perform verification
     try {
-      const url = buildUrl(formData.host, formData.port, formData.ssl);
-      const result = await api.createBackend({ 
-        name: formData.name, 
-        url, 
-        token: formData.token 
-      });
-      setFormData({ name: "", host: "", port: "9090", ssl: false, token: "" });
-      await loadBackends();
-      onBackendChange?.();
+      const testResult = await api.testBackend(url, formData.token);
       
-      // Show success message for first backend
-      if (result.isActive) {
-        setTestResult({ success: true, message: t("firstBackendAutoActive") });
-        setTimeout(() => setTestResult(null), 3000);
-      }
-      
-      if (isFirstTime && onConfigComplete) {
-        onConfigComplete();
-        onOpenChange(false);
+      if (testResult.success) {
+        setVerifyPhase("success");
+        setVerifyMessage(testResult.message || t("testSuccess"));
+      } else {
+        setVerifyPhase("error");
+        setVerifyMessage(testResult.message || t("testFailed"));
       }
     } catch (error: any) {
-      alert(error.message || "Failed to create backend");
-    } finally {
-      setLoading(false);
+      setVerifyPhase("error");
+      setVerifyMessage(error.message || t("testFailed"));
+    }
+  };
+
+  // Called after verification animation completes
+  const handleVerifyComplete = async () => {
+    if (!pendingBackend) return;
+    
+    // Only save if verification was successful
+    if (verifyPhase === "success") {
+      try {
+        const result = await api.createBackend({ 
+          name: pendingBackend.name, 
+          url: pendingBackend.url, 
+          token: pendingBackend.token 
+        });
+        
+        setFormData({ name: "", host: "", port: "9090", ssl: false, token: "" });
+        setShowVerifyAnimation(false);
+        setPendingBackend(null);
+        await loadBackends();
+        await onBackendChange?.();
+        
+        // Show success message for first backend
+        if (result.isActive) {
+          setTestResult({ success: true, message: t("firstBackendAutoActive") });
+          setTimeout(() => setTestResult(null), 3000);
+        }
+        
+        if (isFirstTime && onConfigComplete) {
+          await onConfigComplete();
+          onOpenChange(false);
+        }
+      } catch (error: any) {
+        setShowVerifyAnimation(false);
+        setPendingBackend(null);
+        setErrorMessage(error.message || "Failed to create backend");
+        setErrorDialogOpen(true);
+      }
+    } else {
+      // Verification failed, just close animation and reset
+      setShowVerifyAnimation(false);
+      setPendingBackend(null);
     }
   };
 
@@ -196,9 +246,10 @@ export function BackendConfigDialog({
       setEditingId(null);
       setFormData({ name: "", host: "", port: "9090", ssl: false, token: "" });
       await loadBackends();
-      onBackendChange?.();
+      await onBackendChange?.();
     } catch (error: any) {
-      alert(error.message || "Failed to update backend");
+      setErrorMessage(error.message || "Failed to update backend");
+      setErrorDialogOpen(true);
     } finally {
       setLoading(false);
     }
@@ -218,11 +269,12 @@ export function BackendConfigDialog({
     try {
       await api.deleteBackend(deleteBackendId);
       await loadBackends();
-      onBackendChange?.();
+      await onBackendChange?.();
       setDeleteDialogOpen(false);
       setDeleteBackendId(null);
     } catch (error: any) {
-      alert(error.message || "Failed to delete backend");
+      setErrorMessage(error.message || "Failed to delete backend");
+      setErrorDialogOpen(true);
     } finally {
       setLoading(false);
     }
@@ -232,14 +284,14 @@ export function BackendConfigDialog({
   const handleSetActive = async (id: number) => {
     try {
       await api.setActiveBackend(id);
+      // Refresh local backend list to update UI (active state, eye icon)
       await loadBackends();
-      onBackendChange?.();
-      // Show success message
-      setTestResult({ success: true, message: t("switchSuccess") });
-      // Clear success message after 3 seconds
-      setTimeout(() => setTestResult(null), 3000);
+      // Notify parent to refresh dashboard data
+      await onBackendChange?.();
+      // Show toast notification
+      toast.success(t("switchSuccess"));
     } catch (error: any) {
-      alert(error.message || t("switchFailed"));
+      toast.error(error.message || t("switchFailed"));
     }
   };
 
@@ -248,9 +300,10 @@ export function BackendConfigDialog({
     try {
       await api.setBackendListening(id, listening);
       await loadBackends();
-      onBackendChange?.();
+      await onBackendChange?.();
     } catch (error: any) {
-      alert(error.message || "Failed to update listening state");
+      setErrorMessage(error.message || "Failed to update listening state");
+      setErrorDialogOpen(true);
     }
   };
 
@@ -268,7 +321,7 @@ export function BackendConfigDialog({
     try {
       await api.clearBackendData(clearDataBackendId);
       await loadDbStats();
-      onBackendChange?.();
+      await onBackendChange?.();
       setClearBackendDataDialogOpen(false);
       setClearDataBackendId(null);
     } catch (error: any) {
@@ -305,9 +358,11 @@ export function BackendConfigDialog({
       await api.clearLogs(clearLogsDays);
       await loadDbStats();
       setClearLogsDialogOpen(false);
-      alert(t("logsCleared"));
+      setSuccessMessage(t("logsCleared"));
+      setSuccessDialogOpen(true);
     } catch (error: any) {
-      alert(error.message || "Failed to clear logs");
+      setErrorMessage(error.message || "Failed to clear logs");
+      setErrorDialogOpen(true);
     } finally {
       setClearingLogs(false);
     }
@@ -444,35 +499,26 @@ export function BackendConfigDialog({
                       </div>
                     ) : (
                       // View Mode
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-4">
+                        {/* Left: Info */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium truncate">{backend.name}</span>
-                            {backend.is_active && (
-                              <span className="px-2 py-0.5 rounded-full bg-primary text-primary-foreground text-xs">
-                                {t("displaying")}
-                              </span>
-                            )}
-                            {backend.listening && (
-                              <span className="px-2 py-0.5 rounded-full bg-green-500 text-white text-xs flex items-center gap-1">
-                                <Radio className="w-3 h-3" />
-                                {t("collecting")}
-                              </span>
-                            )}
+                            <span className="font-medium text-base">{backend.name}</span>
                             {!backend.enabled && (
-                              <span className="px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-xs">
+                              <span className="px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-xs font-medium">
                                 {t("disabled")}
                               </span>
                             )}
                           </div>
-                          <div className="text-sm text-muted-foreground truncate mt-0.5">
+                          <div className="text-sm text-muted-foreground mt-1">
                             {backend.host}:{backend.port}
                           </div>
                         </div>
                         
-                        <div className="flex items-center gap-1 ml-4">
-                          {/* Listening Toggle */}
-                          <div className="flex items-center gap-2 mr-2 pr-2 border-r">
+                        {/* Right: Actions */}
+                        <div className="flex items-center gap-2 shrink-0">
+                          {/* Collect Toggle with Label */}
+                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-secondary/50">
                             <Switch
                               checked={backend.listening}
                               onCheckedChange={(checked) => handleToggleListening(backend.id, checked)}
@@ -483,49 +529,54 @@ export function BackendConfigDialog({
                             </span>
                           </div>
 
-                          {/* Set Active (Display) Button */}
-                          {!backend.is_active && (
+                          {/* Action Buttons Group */}
+                          <div className="flex items-center gap-1 pl-2 border-l border-border">
+                            {/* Set Active Button - Show placeholder when active to maintain layout */}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className={cn(
+                                "h-8 w-8",
+                                backend.is_active && "opacity-50 cursor-not-allowed"
+                              )}
+                              onClick={() => !backend.is_active && handleSetActive(backend.id)}
+                              disabled={backend.is_active}
+                              title={backend.is_active ? t("displaying") : t("setActive")}
+                            >
+                              <Eye className={cn("w-4 h-4", backend.is_active && "text-primary")} />
+                            </Button>
+                            
                             <Button
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8"
-                              onClick={() => handleSetActive(backend.id)}
-                              title={t("setActive")}
+                              onClick={() => handleTest(backend)}
+                              disabled={testingId === backend.id}
+                              title={t("testConnection")}
                             >
-                              <Eye className="w-4 h-4" />
+                              <RefreshCw className={cn("w-4 h-4", testingId === backend.id && "animate-spin")} />
                             </Button>
-                          )}
-                          
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => handleTest(backend)}
-                            disabled={testingId === backend.id}
-                            title={t("testConnection")}
-                          >
-                            <RefreshCw className={cn("w-4 h-4", testingId === backend.id && "animate-spin")} />
-                          </Button>
-                          
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => startEdit(backend)}
-                            title={commonT("edit")}
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </Button>
-                          
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive"
-                            onClick={() => openDeleteDialog(backend.id)}
-                            title={commonT("delete")}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
+                            
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => startEdit(backend)}
+                              title={commonT("edit")}
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </Button>
+                            
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={() => openDeleteDialog(backend.id)}
+                              title={commonT("delete")}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -768,6 +819,35 @@ export function BackendConfigDialog({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Success Alert Dialog */}
+      <AlertDialog open={successDialogOpen} onOpenChange={setSuccessDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-green-500" />
+              {commonT("success") || "Success"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {successMessage}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setSuccessDialogOpen(false)}>
+              {commonT("ok") || "OK"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Verification Animation */}
+      <BackendVerifyAnimation
+        show={showVerifyAnimation}
+        phase={verifyPhase}
+        backendName={pendingBackend?.name}
+        message={verifyMessage}
+        onComplete={handleVerifyComplete}
+      />
     </>
   );
 }

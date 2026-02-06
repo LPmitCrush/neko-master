@@ -43,85 +43,85 @@
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
-  
+
   /* UniFi Style Colors */
-  --color-unifi-blue: #0063FF;
-  --color-unifi-purple: #7B61FF;
-  --color-unifi-cyan: #00C7FF;
-  --color-unifi-green: #00D084;
-  --color-unifi-orange: #FF8C42;
-  --color-unifi-pink: #FF6B9D;
+  --color-unifi-blue: #0063ff;
+  --color-unifi-purple: #7b61ff;
+  --color-unifi-cyan: #00c7ff;
+  --color-unifi-green: #00d084;
+  --color-unifi-orange: #ff8c42;
+  --color-unifi-pink: #ff6b9d;
 }
 
 :root {
   --radius: 0.75rem;
   /* Light Mode - Clean white background */
-  --background: #F5F7FA;
-  --foreground: #1A1D29;
-  --card: #FFFFFF;
-  --card-foreground: #1A1D29;
-  --popover: #FFFFFF;
-  --popover-foreground: #1A1D29;
-  --primary: #0063FF;
-  --primary-foreground: #FFFFFF;
-  --secondary: #E8ECF2;
-  --secondary-foreground: #1A1D29;
-  --muted: #E8ECF2;
-  --muted-foreground: #6B7280;
-  --accent: #E8ECF2;
-  --accent-foreground: #1A1D29;
-  --destructive: #EF4444;
-  --border: #E2E8F0;
-  --input: #E2E8F0;
-  --ring: #0063FF;
-  --chart-1: #0063FF;
-  --chart-2: #7B61FF;
-  --chart-3: #00C7FF;
-  --chart-4: #00D084;
-  --chart-5: #FF8C42;
-  --sidebar: #FFFFFF;
-  --sidebar-foreground: #1A1D29;
-  --sidebar-primary: #0063FF;
-  --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #E8ECF2;
-  --sidebar-accent-foreground: #1A1D29;
-  --sidebar-border: #E2E8F0;
-  --sidebar-ring: #0063FF;
+  --background: #f5f7fa;
+  --foreground: #1a1d29;
+  --card: #ffffff;
+  --card-foreground: #1a1d29;
+  --popover: #ffffff;
+  --popover-foreground: #1a1d29;
+  --primary: #0063ff;
+  --primary-foreground: #ffffff;
+  --secondary: #e8ecf2;
+  --secondary-foreground: #1a1d29;
+  --muted: #e8ecf2;
+  --muted-foreground: #6b7280;
+  --accent: #e8ecf2;
+  --accent-foreground: #1a1d29;
+  --destructive: #ef4444;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #0063ff;
+  --chart-1: #0063ff;
+  --chart-2: #7b61ff;
+  --chart-3: #00c7ff;
+  --chart-4: #00d084;
+  --chart-5: #ff8c42;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #1a1d29;
+  --sidebar-primary: #0063ff;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e8ecf2;
+  --sidebar-accent-foreground: #1a1d29;
+  --sidebar-border: #e2e8f0;
+  --sidebar-ring: #0063ff;
 }
 
 .dark {
   /* Dark Mode - UniFi Dark Theme */
-  --background: #0B0F19;
-  --foreground: #F8FAFC;
+  --background: #0b0f19;
+  --foreground: #f8fafc;
   --card: rgba(23, 28, 43, 0.8);
-  --card-foreground: #F8FAFC;
-  --popover: #171C2B;
-  --popover-foreground: #F8FAFC;
-  --primary: #3B82F6;
-  --primary-foreground: #FFFFFF;
+  --card-foreground: #f8fafc;
+  --popover: #171c2b;
+  --popover-foreground: #f8fafc;
+  --primary: #3b82f6;
+  --primary-foreground: #ffffff;
   --secondary: rgba(59, 130, 246, 0.15);
-  --secondary-foreground: #F8FAFC;
-  --muted: #1E2538;
-  --muted-foreground: #94A3B8;
+  --secondary-foreground: #f8fafc;
+  --muted: #1e2538;
+  --muted-foreground: #94a3b8;
   --accent: rgba(59, 130, 246, 0.15);
-  --accent-foreground: #F8FAFC;
-  --destructive: #EF4444;
+  --accent-foreground: #f8fafc;
+  --destructive: #ef4444;
   --border: rgba(255, 255, 255, 0.08);
   --input: rgba(255, 255, 255, 0.08);
-  --ring: #3B82F6;
-  --chart-1: #3B82F6;
-  --chart-2: #8B5CF6;
-  --chart-3: #06B6D4;
-  --chart-4: #10B981;
-  --chart-5: #F59E0B;
-  --sidebar: #0F1420;
-  --sidebar-foreground: #F8FAFC;
-  --sidebar-primary: #3B82F6;
-  --sidebar-primary-foreground: #FFFFFF;
+  --ring: #3b82f6;
+  --chart-1: #3b82f6;
+  --chart-2: #8b5cf6;
+  --chart-3: #06b6d4;
+  --chart-4: #10b981;
+  --chart-5: #f59e0b;
+  --sidebar: #0f1420;
+  --sidebar-foreground: #f8fafc;
+  --sidebar-primary: #3b82f6;
+  --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: rgba(59, 130, 246, 0.15);
-  --sidebar-accent-foreground: #F8FAFC;
+  --sidebar-accent-foreground: #f8fafc;
   --sidebar-border: rgba(255, 255, 255, 0.08);
-  --sidebar-ring: #3B82F6;
+  --sidebar-ring: #3b82f6;
 }
 
 @layer base {
@@ -134,11 +134,34 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
-    background-image: 
-      radial-gradient(ellipse at 0% 0%, rgba(59, 130, 246, 0.08) 0%, transparent 50%),
-      radial-gradient(ellipse at 100% 0%, rgba(139, 92, 246, 0.05) 0%, transparent 50%),
-      radial-gradient(ellipse at 100% 100%, rgba(6, 182, 212, 0.05) 0%, transparent 50%);
+    background-image:
+      radial-gradient(
+        ellipse at 0% 0%,
+        rgba(59, 130, 246, 0.08) 0%,
+        transparent 50%
+      ),
+      radial-gradient(
+        ellipse at 100% 0%,
+        rgba(139, 92, 246, 0.05) 0%,
+        transparent 50%
+      ),
+      radial-gradient(
+        ellipse at 100% 100%,
+        rgba(6, 182, 212, 0.05) 0%,
+        transparent 50%
+      );
     background-attachment: fixed;
+  }
+
+  /* Prevent Radix UI scroll-lock from causing layout shift */
+  /* scrollbar-gutter: stable already reserves space, so we override Radix's compensation */
+  html[data-scroll-locked] {
+    margin-right: 0 !important;
+  }
+
+  body[data-scroll-locked] {
+    padding-right: 0 !important;
+    margin-right: 0 !important;
   }
 }
 
@@ -148,7 +171,7 @@
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 
+  box-shadow:
     0 4px 6px -1px rgba(0, 0, 0, 0.1),
     0 2px 4px -2px rgba(0, 0, 0, 0.1),
     inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
@@ -157,7 +180,7 @@
 .light .glass-card {
   background: rgba(255, 255, 255, 0.8);
   border: 1px solid rgba(0, 0, 0, 0.06);
-  box-shadow: 
+  box-shadow:
     0 4px 6px -1px rgba(0, 0, 0, 0.05),
     0 2px 4px -2px rgba(0, 0, 0, 0.05),
     inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
@@ -165,7 +188,7 @@
 
 /* Gradient Text */
 .gradient-text {
-  background: linear-gradient(135deg, #3B82F6 0%, #8B5CF6 50%, #06B6D4 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #06b6d4 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -201,21 +224,22 @@
 
 /* Animations */
 @keyframes fade-in-up {
-  from { 
-    opacity: 0; 
-    transform: translateY(20px); 
+  from {
+    opacity: 0;
+    transform: translateY(20px);
   }
-  to { 
-    opacity: 1; 
-    transform: translateY(0); 
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
 @keyframes pulse-glow {
-  0%, 100% { 
+  0%,
+  100% {
     box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
   }
-  50% { 
+  50% {
     box-shadow: 0 0 30px rgba(59, 130, 246, 0.5);
   }
 }
@@ -269,7 +293,9 @@
 
 /* Card hover effects */
 .hover-lift {
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .hover-lift:hover {
