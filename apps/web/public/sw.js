@@ -3,7 +3,7 @@
 const CACHE_NAME = "clash-master-v1";
 
 // Assets to pre-cache on install
-const PRECACHE_ASSETS = ["/", "/manifest.json"];
+const PRECACHE_ASSETS = ["/", "/manifest.webmanifest"];
 
 // Install event - pre-cache core assets
 self.addEventListener("install", (event) => {

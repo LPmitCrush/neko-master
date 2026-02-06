@@ -43,7 +43,11 @@ const NAV_ITEMS = [
   { id: "rules", icon: Route },
 ];
 
-export function Navigation({ activeTab, onTabChange, onBackendChange }: NavigationProps) {
+export function Navigation({
+  activeTab,
+  onTabChange,
+  onBackendChange,
+}: NavigationProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const t = useTranslations("nav");
@@ -59,7 +63,7 @@ export function Navigation({ activeTab, onTabChange, onBackendChange }: Navigati
       <aside className="hidden lg:flex flex-col w-64 h-screen sticky top-0 border-r border-border/40 bg-background/80 backdrop-blur-md">
         {/* Logo */}
         <div className="flex items-center gap-3 p-6 border-b border-border/40">
-          <div className="w-16 h-16 rounded-xl  flex items-center justify-center overflow-hidden hover:opacity-80">
+          <div className="w-14 h-14 rounded-xl  flex items-center justify-center overflow-hidden hover:opacity-80">
             <Image
               src="/clash-master.png"
               alt="Clash Master"

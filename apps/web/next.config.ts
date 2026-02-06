@@ -23,10 +23,18 @@ const API_DESTINATION = apiUrl.endsWith('/api')
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   output: 'standalone',
+  outputFileTracingRoot: join(__dirname, '../..'),
   env: {
     NEXT_PUBLIC_APP_VERSION: rootPkg.version || "0.0.0",
     // Expose WebSocket port to browser (for client-side use)
     NEXT_PUBLIC_WS_PORT: process.env.NEXT_PUBLIC_WS_PORT || "3002",
+  },
+  // Turbopack configuration (formerly experimental.turbopack)
+  turbopack: {
+    // Enable filesystem caching for faster rebuilds
+    resolveAlias: {
+      // Handle any Node.js native module imports in client code
+    },
   },
   async rewrites() {
     return [
@@ -38,15 +46,6 @@ const nextConfig: NextConfig = {
   },
   async headers() {
     return [
-      {
-        source: "/manifest.json",
-        headers: [
-          {
-            key: "Cache-Control",
-            value: "public, max-age=0, must-revalidate",
-          },
-        ],
-      },
       {
         source: "/sw.js",
         headers: [
@@ -65,6 +64,7 @@ const nextConfig: NextConfig = {
 };
 
 // Apply PWA in production only
+// Note: PWA plugin uses webpack, so we need to use --webpack flag for production builds
 let finalConfig = withNextIntl(nextConfig);
 
 if (process.env.NODE_ENV === "production") {

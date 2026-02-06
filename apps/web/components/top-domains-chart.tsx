@@ -87,10 +87,7 @@ export function TopDomainsChart({ data }: TopDomainsChartProps) {
   const chartData = useMemo(() => {
     if (!data) return [];
     const result = data.slice(0, topN).map((domain, index) => ({
-      name:
-        domain.domain.length > 15
-          ? domain.domain.slice(0, 15) + "..."
-          : domain.domain,
+      name: domain.domain,
       fullDomain: domain.domain,
       total: domain.totalDownload + domain.totalUpload,
       download: domain.totalDownload,
@@ -200,8 +197,8 @@ export function TopDomainsChart({ data }: TopDomainsChartProps) {
               <YAxis
                 type="category"
                 dataKey="name"
-                width={70}
-                tick={{ fontSize: 10, fill: "currentColor" }}
+                width={180}
+                tick={{ fontSize: 11, fill: "currentColor" }}
                 tickLine={false}
                 axisLine={false}
                 interval={0}
