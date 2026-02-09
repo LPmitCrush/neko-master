@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import {
   BarChart,
   Bar,
@@ -14,11 +14,13 @@ import {
 } from "recharts";
 import { useTranslations } from "next-intl";
 import { BarChart3, Loader2 } from "lucide-react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Favicon } from "@/components/favicon";
 import { formatBytes } from "@/lib/utils";
 import { api, type TimeRange } from "@/lib/api";
+import { getDomainsQueryKey } from "@/lib/stats-query-keys";
 import type { DomainStats } from "@clashmaster/shared";
 
 interface TopDomainsChartProps {
@@ -72,38 +74,42 @@ export function TopDomainsChart({ activeBackendId, timeRange }: TopDomainsChartP
   const t = useTranslations("domains");
   const commonT = useTranslations("stats");
   const [topN, setTopN] = useState<TopOption>(10);
-  const [domains, setDomains] = useState<DomainStats[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   // Track whether this is the initial render to only animate on first load
   const hasRenderedRef = useRef(false);
   // Track container width to hide labels on small screens
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
+  const stableTimeRange = useMemo<TimeRange | undefined>(() => {
+    if (!timeRange?.start && !timeRange?.end) return undefined;
+    return { start: timeRange.start, end: timeRange.end };
+  }, [timeRange?.start, timeRange?.end]);
 
-  // Fetch domains data based on topN selection
-  const fetchData = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const result = await api.getDomains(activeBackendId, {
+  const domainsQuery = useQuery({
+    queryKey: getDomainsQueryKey(
+      activeBackendId,
+      {
         offset: 0,
         limit: topN,
         sortBy: "totalDownload",
         sortOrder: "desc",
-        start: timeRange?.start,
-        end: timeRange?.end,
-      });
-      setDomains(result.data);
-    } catch (error) {
-      console.error("Failed to fetch top domains:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [activeBackendId, topN, timeRange]);
+      },
+      stableTimeRange,
+    ),
+    queryFn: () =>
+      api.getDomains(activeBackendId, {
+        offset: 0,
+        limit: topN,
+        sortBy: "totalDownload",
+        sortOrder: "desc",
+        start: stableTimeRange?.start,
+        end: stableTimeRange?.end,
+      }),
+    enabled: !!activeBackendId,
+    placeholderData: keepPreviousData,
+  });
 
-  // Fetch data when topN or activeBackendId changes
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  const domains = domainsQuery.data?.data ?? [];
+  const isLoading = domainsQuery.isLoading && !domainsQuery.data;
 
   useEffect(() => {
     if (!containerRef.current) return;

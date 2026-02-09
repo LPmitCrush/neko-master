@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef, memo, useMemo } from "react";
+import { useEffect, useState, useCallback, memo, useMemo } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { useTheme } from "next-themes";
+import { keepPreviousData, useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Globe,
   MapPin,
@@ -68,8 +69,12 @@ import {
   api,
   getPresetTimeRange,
   type TimeRange,
-  type Backend,
 } from "@/lib/api";
+import {
+  getCountriesQueryKey,
+  getDevicesQueryKey,
+  getSummaryQueryKey,
+} from "@/lib/stats-query-keys";
 import { cn } from "@/lib/utils";
 import type { StatsSummary, CountryStats, DeviceStats } from "@clashmaster/shared";
 
@@ -193,12 +198,10 @@ const CountriesContent = memo(function CountriesContent({
 });
 
 const ProxiesContent = memo(function ProxiesContent({
-  data,
   activeBackendId,
   timeRange,
   backendStatus,
 }: {
-  data: StatsSummary | null;
   activeBackendId?: number;
   timeRange: TimeRange;
   backendStatus: BackendStatus;
@@ -206,7 +209,6 @@ const ProxiesContent = memo(function ProxiesContent({
   return (
     <div className="space-y-6">
       <InteractiveProxyStats
-        data={data?.proxyStats || []}
         activeBackendId={activeBackendId}
         timeRange={timeRange}
         backendStatus={backendStatus}
@@ -216,12 +218,10 @@ const ProxiesContent = memo(function ProxiesContent({
 });
 
 const RulesContent = memo(function RulesContent({
-  data,
   activeBackendId,
   timeRange,
   backendStatus,
 }: {
-  data: StatsSummary | null;
   activeBackendId?: number;
   timeRange: TimeRange;
   backendStatus: BackendStatus;
@@ -229,7 +229,6 @@ const RulesContent = memo(function RulesContent({
   return (
     <div className="space-y-6">
       <InteractiveRuleStats
-        data={data?.ruleStats || []}
         activeBackendId={activeBackendId}
         timeRange={timeRange}
         backendStatus={backendStatus}
@@ -247,44 +246,20 @@ const DevicesContent = memo(function DevicesContent({
   timeRange: TimeRange;
   backendStatus: BackendStatus;
 }) {
-  const [deviceStats, setDeviceStats] = useState<DeviceStats[]>([]);
-  const [loading, setLoading] = useState(true);
-  const requestIdRef = useRef(0);
-  const hasLoadedRef = useRef(false);
+  const stableTimeRange = useMemo<TimeRange | undefined>(() => {
+    if (!timeRange?.start && !timeRange?.end) return undefined;
+    return { start: timeRange.start, end: timeRange.end };
+  }, [timeRange?.start, timeRange?.end]);
 
-  useEffect(() => {
-    let cancelled = false;
+  const devicesQuery = useQuery({
+    queryKey: getDevicesQueryKey(activeBackendId, 50, stableTimeRange),
+    queryFn: () => api.getDevices(activeBackendId, 50, stableTimeRange),
+    enabled: !!activeBackendId,
+    placeholderData: keepPreviousData,
+  });
 
-    const fetchDevices = async () => {
-      const requestId = ++requestIdRef.current;
-      const shouldShowLoading = !hasLoadedRef.current;
-      if (shouldShowLoading) {
-        setLoading(true);
-      }
-
-      try {
-        const data = await api.getDevices(activeBackendId, 50, timeRange);
-        if (cancelled || requestId !== requestIdRef.current) return;
-        setDeviceStats(data);
-        hasLoadedRef.current = true;
-      } catch (err) {
-        if (cancelled || requestId !== requestIdRef.current) return;
-        console.error("Failed to fetch device stats:", err);
-        if (!hasLoadedRef.current) {
-          setDeviceStats([]);
-        }
-      } finally {
-        if (shouldShowLoading && !cancelled) {
-          setLoading(false);
-        }
-      }
-    };
-
-    fetchDevices();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeBackendId, timeRange]);
+  const deviceStats: DeviceStats[] = devicesQuery.data ?? [];
+  const loading = devicesQuery.isLoading && !devicesQuery.data;
 
   if (loading) {
     return (
@@ -326,151 +301,118 @@ export default function DashboardPage() {
   const pathname = usePathname();
   const locale = useLocale();
   const { theme, setTheme } = useTheme();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("overview");
-  const [data, setData] = useState<StatsSummary | null>(null);
-  const [countryData, setCountryData] = useState<CountryStats[]>([]);
-  const [error, setError] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>(getPresetTimeRange("24h"));
   const [timePreset, setTimePreset] = useState<TimePreset>("24h");
-  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
-  const [isLoading, setIsLoading] = useState(false);
+  const [isManualRefreshing, setIsManualRefreshing] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [showBackendDialog, setShowBackendDialog] = useState(false);
   const [isFirstTime, setIsFirstTime] = useState(false);
   const [showAboutDialog, setShowAboutDialog] = useState(false);
-  const [backends, setBackends] = useState<Backend[]>([]);
-  const [activeBackend, setActiveBackend] = useState<Backend | null>(null);
-  const [listeningBackends, setListeningBackends] = useState<Backend[]>([]);
-  const initialLoaded = useRef(false);
-  const lastSummaryRef = useRef<string>("");
-  const lastCountriesRef = useRef<string>("");
+
+  const stableTimeRange = useMemo<TimeRange | undefined>(() => {
+    if (!timeRange?.start && !timeRange?.end) return undefined;
+    return { start: timeRange.start, end: timeRange.end };
+  }, [timeRange?.start, timeRange?.end]);
+
+  const backendsQuery = useQuery({
+    queryKey: ["backends"],
+    queryFn: () => api.getBackends(),
+  });
+
+  const backends = backendsQuery.data ?? [];
+  const activeBackend = useMemo(
+    () => backends.find((backend) => backend.is_active) || backends[0] || null,
+    [backends],
+  );
+  const listeningBackends = useMemo(
+    () => backends.filter((backend) => backend.listening),
+    [backends],
+  );
   const activeBackendId = activeBackend?.id;
+
+  const needsSummary = activeTab === "overview";
+  const needsCountries = activeTab === "overview" || activeTab === "countries";
+
+  const summaryQuery = useQuery({
+    queryKey: getSummaryQueryKey(activeBackendId, stableTimeRange),
+    queryFn: () => api.getSummary(activeBackendId, stableTimeRange),
+    enabled: !!activeBackendId && needsSummary,
+    placeholderData: keepPreviousData,
+  });
+
+  const countriesQuery = useQuery({
+    queryKey: getCountriesQueryKey(activeBackendId, 50, stableTimeRange),
+    queryFn: () => api.getCountries(activeBackendId, 50, stableTimeRange),
+    enabled: !!activeBackendId && needsCountries,
+    placeholderData: keepPreviousData,
+  });
+
+  const data: StatsSummary | null = summaryQuery.data ?? null;
+  const countryData: CountryStats[] = countriesQuery.data ?? [];
+  const statsFetchingCount = useIsFetching({ queryKey: ["stats"] });
+  const isLoading = isManualRefreshing || statsFetchingCount > 0;
+
+  const queryError = useMemo(() => {
+    if (needsSummary && summaryQuery.error) {
+      return summaryQuery.error instanceof Error
+        ? summaryQuery.error.message
+        : "Unknown error";
+    }
+    if (needsCountries && countriesQuery.error) {
+      return countriesQuery.error instanceof Error
+        ? countriesQuery.error.message
+        : "Unknown error";
+    }
+    return null;
+  }, [needsSummary, summaryQuery.error, needsCountries, countriesQuery.error]);
 
   const backendStatus: BackendStatus = useMemo(() => {
     if (!activeBackend) return "unknown";
-    if (error) return "unhealthy";
+    if (queryError) return "unhealthy";
     if (activeBackend.listening) return "healthy";
     return "unhealthy";
-  }, [activeBackend, error]);
+  }, [activeBackend, queryError]);
 
   const backendStatusHint = useMemo(() => {
-    if (error) return error;
+    if (queryError) return queryError;
     if (activeBackend && !activeBackend.listening) return dashboardT("backendUnavailableHint");
     return null;
-  }, [error, activeBackend, dashboardT]);
-
-  // Check if backend is configured
-  const checkBackend = useCallback(async () => {
-    try {
-      const backendsData = await api.getBackends();
-      setBackends(backendsData);
-
-      if (backendsData.length === 0) {
-        setIsFirstTime(true);
-        setShowBackendDialog(true);
-      } else {
-        // Find active backend
-        const active = backendsData.find((b) => b.is_active) || backendsData[0];
-        setActiveBackend(active);
-
-        // Find listening backends
-        const listening = backendsData.filter((b) => b.listening);
-        setListeningBackends(listening);
-      }
-    } catch (err) {
-      console.error("Failed to check backends:", err);
-    }
-  }, []);
-
-  // Load stats with deduplication
-  const loadStats = useCallback(
-    async (showLoading = false, rangeOverride?: TimeRange) => {
-      if (showLoading) setIsLoading(true);
-
-      try {
-        const queryRange = rangeOverride ?? timeRange;
-        let backendId = activeBackendId;
-        if (!backendId) {
-          const activeBackendData = await api.getActiveBackend();
-          if ("error" in activeBackendData) {
-            setData(null);
-            setCountryData([]);
-            setError(null);
-            lastSummaryRef.current = "";
-            lastCountriesRef.current = "";
-            return;
-          }
-          backendId = activeBackendData.id;
-          if (!activeBackend || activeBackend.id !== activeBackendData.id) {
-            setActiveBackend(activeBackendData);
-          }
-        }
-
-        const needsSummary =
-          activeTab === "overview" || activeTab === "proxies" || activeTab === "rules";
-        const needsCountries = activeTab === "overview" || activeTab === "countries";
-
-        const [stats, countries] = await Promise.all([
-          needsSummary ? api.getSummary(backendId, queryRange) : Promise.resolve(null),
-          needsCountries ? api.getCountries(backendId, 50, queryRange) : Promise.resolve(null),
-        ]);
-
-        if (stats) {
-          const summarySignature = JSON.stringify(stats);
-          if (summarySignature !== lastSummaryRef.current) {
-            lastSummaryRef.current = summarySignature;
-            setData(stats);
-          }
-        }
-
-        if (countries) {
-          const countriesSignature = JSON.stringify(countries);
-          if (countriesSignature !== lastCountriesRef.current) {
-            lastCountriesRef.current = countriesSignature;
-            setCountryData(countries);
-          }
-        }
-
-        setLastUpdated(new Date());
-        setError(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Unknown error");
-      } finally {
-        if (showLoading) setIsLoading(false);
-      }
-    },
-    [timeRange, activeBackendId, activeBackend, activeTab],
-  );
+  }, [queryError, activeBackend, dashboardT]);
 
   const refreshNow = useCallback(
     async (showLoading = false) => {
-      if (isRollingTimePreset(timePreset)) {
-        const latestRange = getPresetTimeRange(timePreset);
-        setTimeRange(latestRange);
-        await loadStats(showLoading, latestRange);
-        return;
+      if (showLoading) {
+        setIsManualRefreshing(true);
       }
-      await loadStats(showLoading);
+      try {
+        if (isRollingTimePreset(timePreset)) {
+          setTimeRange(getPresetTimeRange(timePreset));
+        }
+        await queryClient.invalidateQueries({ queryKey: ["stats"] });
+      } finally {
+        if (showLoading) {
+          setIsManualRefreshing(false);
+        }
+      }
     },
-    [timePreset, loadStats],
+    [queryClient, timePreset],
   );
 
   const handleTimeRangeChange = useCallback(
     (range: TimeRange, preset: TimePreset) => {
       setTimePreset(preset);
       setTimeRange(range);
-      if (initialLoaded.current) {
-        loadStats(true, range);
-      }
     },
-    [loadStats],
+    [],
   );
 
   // Switch active backend
   const handleSwitchBackend = async (backendId: number) => {
     try {
       await api.setActiveBackend(backendId);
-      await checkBackend();
+      await backendsQuery.refetch();
       await refreshNow(true);
     } catch (err) {
       console.error("Failed to switch backend:", err);
@@ -479,34 +421,41 @@ export default function DashboardPage() {
 
   // Handle backend configuration changes
   const handleBackendChange = useCallback(async () => {
-    await checkBackend();
+    await backendsQuery.refetch();
     await refreshNow(true);
-  }, [checkBackend, refreshNow]);
+  }, [backendsQuery.refetch, refreshNow]);
 
-  // Initial load
+  // Open setup dialog automatically when no backend is configured.
   useEffect(() => {
-    if (!initialLoaded.current) {
-      checkBackend();
-      loadStats(true);
-      initialLoaded.current = true;
+    if (backendsQuery.isError) return;
+    if (backendsQuery.isLoading || backendsQuery.isFetching) return;
+    if (backends.length === 0) {
+      setIsFirstTime(true);
+      setShowBackendDialog(true);
+      return;
     }
-  }, [loadStats, checkBackend]);
+    if (isFirstTime) {
+      setIsFirstTime(false);
+    }
+  }, [backends.length, backendsQuery.isError, backendsQuery.isFetching, backendsQuery.isLoading, isFirstTime]);
 
-  // Background polling - every 5 seconds without loading state (only when autoRefresh is on)
+  // Keep rolling windows fresh by moving the range every 5s.
   useEffect(() => {
-    if (!autoRefresh) return;
-
+    if (!autoRefresh || !isRollingTimePreset(timePreset)) return;
     const interval = setInterval(() => {
-      if (isRollingTimePreset(timePreset)) {
-        const latestRange = getPresetTimeRange(timePreset);
-        setTimeRange(latestRange);
-        loadStats(false, latestRange);
-        return;
-      }
-      loadStats(false);
+      setTimeRange(getPresetTimeRange(timePreset));
     }, 5000);
     return () => clearInterval(interval);
-  }, [loadStats, autoRefresh, timePreset]);
+  }, [autoRefresh, timePreset]);
+
+  // For fixed windows, keep polling active stats queries.
+  useEffect(() => {
+    if (!autoRefresh || isRollingTimePreset(timePreset)) return;
+    const interval = setInterval(() => {
+      queryClient.invalidateQueries({ queryKey: ["stats"] });
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [autoRefresh, timePreset, queryClient]);
 
   const renderContent = () => {
     switch (activeTab) {
@@ -515,7 +464,7 @@ export default function DashboardPage() {
           <OverviewContent
             data={data}
             countryData={countryData}
-            error={error}
+            error={queryError}
             timeRange={timeRange}
             timePreset={timePreset}
             activeBackendId={activeBackendId}
@@ -530,7 +479,6 @@ export default function DashboardPage() {
       case "proxies":
         return (
           <ProxiesContent
-            data={data}
             activeBackendId={activeBackendId}
             timeRange={timeRange}
             backendStatus={backendStatus}
@@ -539,7 +487,6 @@ export default function DashboardPage() {
       case "rules":
         return (
           <RulesContent
-            data={data}
             activeBackendId={activeBackendId}
             timeRange={timeRange}
             backendStatus={backendStatus}
@@ -560,7 +507,7 @@ export default function DashboardPage() {
           <OverviewContent
             data={data}
             countryData={countryData}
-            error={error}
+            error={queryError}
             timeRange={timeRange}
             timePreset={timePreset}
             activeBackendId={activeBackendId}

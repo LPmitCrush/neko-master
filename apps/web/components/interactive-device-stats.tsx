@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useCallback, useMemo, useEffect, useRef } from "react";
-import { Loader2, BarChart3, Link2, Smartphone, Monitor, Tablet, HelpCircle } from "lucide-react";
+import { useState, useCallback, useMemo, useEffect } from "react";
+import { Loader2, BarChart3, Link2, Smartphone } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, BarChart, Bar, XAxis, YAxis, Cell as BarCell, LabelList } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -10,10 +11,14 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatBytes, formatNumber } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { api, type TimeRange } from "@/lib/api";
+import {
+  getDeviceDomainsQueryKey,
+  getDeviceIPsQueryKey,
+} from "@/lib/stats-query-keys";
 import { Favicon } from "@/components/favicon";
 import { DomainStatsTable, IPStatsTable } from "@/components/stats-tables";
 import { COLORS } from "@/lib/stats-utils";
-import type { DeviceStats, DomainStats, IPStats } from "@clashmaster/shared";
+import type { DeviceStats } from "@clashmaster/shared";
 
 interface InteractiveDeviceStatsProps {
   data: DeviceStats[];
@@ -48,14 +53,8 @@ export function InteractiveDeviceStats({
   }, [timeRange?.start, timeRange?.end]);
   
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
-  const [deviceDomains, setDeviceDomains] = useState<DomainStats[]>([]);
-  const [deviceIPs, setDeviceIPs] = useState<IPStats[]>([]);
-  const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("domains");
   const [showDomainBarLabels, setShowDomainBarLabels] = useState(true);
-  const requestIdRef = useRef(0);
-  const prevSelectedDeviceRef = useRef<string | null>(null);
-  const prevBackendRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     const media = window.matchMedia("(min-width: 640px)");
@@ -83,38 +82,9 @@ export function InteractiveDeviceStats({
   const topDevices = useMemo(() => [...chartData].sort((a, b) => b.value - a.value).slice(0, 4), [chartData]);
   const maxTotal = useMemo(() => chartData.length ? Math.max(...chartData.map(d => d.value)) : 1, [chartData]);
 
-  const loadDeviceDetails = useCallback(async (sourceIP: string, options?: { background?: boolean }) => {
-    const background = options?.background ?? false;
-    const requestId = ++requestIdRef.current;
-    if (!background) {
-      setLoading(true);
-    }
-    try {
-      const [domains, ips] = await Promise.all([
-        api.getDeviceDomains(sourceIP, activeBackendId, stableTimeRange),
-        api.getDeviceIPs(sourceIP, activeBackendId, stableTimeRange),
-      ]);
-      if (requestId !== requestIdRef.current) return;
-      setDeviceDomains(domains);
-      setDeviceIPs(ips);
-    } catch (err) {
-      console.error(`Failed to load details for ${sourceIP}:`, err);
-      if (!background) {
-        setDeviceDomains([]);
-        setDeviceIPs([]);
-      }
-    } finally {
-      if (!background && requestId === requestIdRef.current) {
-        setLoading(false);
-      }
-    }
-  }, [activeBackendId, stableTimeRange]);
-
   useEffect(() => {
     if (chartData.length === 0) {
       setSelectedDevice(null);
-      setDeviceDomains([]);
-      setDeviceIPs([]);
       return;
     }
     const exists = !!selectedDevice && chartData.some((item) => item.rawName === selectedDevice);
@@ -123,18 +93,33 @@ export function InteractiveDeviceStats({
     }
   }, [chartData, selectedDevice]);
 
-  useEffect(() => {
-    if (!selectedDevice) return;
+  const deviceDomainsQuery = useQuery({
+    queryKey: getDeviceDomainsQueryKey(selectedDevice, activeBackendId, stableTimeRange),
+    queryFn: () =>
+      api.getDeviceDomains(
+        selectedDevice!,
+        activeBackendId,
+        stableTimeRange,
+      ),
+    enabled: !!activeBackendId && !!selectedDevice,
+    placeholderData: keepPreviousData,
+  });
 
-    const selectedChanged = prevSelectedDeviceRef.current !== selectedDevice;
-    const backendChanged = prevBackendRef.current !== activeBackendId;
+  const deviceIPsQuery = useQuery({
+    queryKey: getDeviceIPsQueryKey(selectedDevice, activeBackendId, stableTimeRange),
+    queryFn: () =>
+      api.getDeviceIPs(
+        selectedDevice!,
+        activeBackendId,
+        stableTimeRange,
+      ),
+    enabled: !!activeBackendId && !!selectedDevice,
+    placeholderData: keepPreviousData,
+  });
 
-    prevSelectedDeviceRef.current = selectedDevice;
-    prevBackendRef.current = activeBackendId;
-    loadDeviceDetails(selectedDevice, {
-      background: !selectedChanged && !backendChanged,
-    });
-  }, [selectedDevice, activeBackendId, timeRange?.start, timeRange?.end, loadDeviceDetails]);
+  const deviceDomains = deviceDomainsQuery.data ?? [];
+  const deviceIPs = deviceIPsQuery.data ?? [];
+  const loading = !!selectedDevice && !deviceDomainsQuery.data && !deviceIPsQuery.data;
 
   const handleDeviceClick = useCallback((rawName: string) => {
     if (selectedDevice !== rawName) {

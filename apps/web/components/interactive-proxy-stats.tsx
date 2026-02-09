@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { Loader2, BarChart3, Link2, Waypoints } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, BarChart, Bar, XAxis, YAxis, Cell as BarCell, LabelList } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -11,13 +12,18 @@ import { CountryFlag, extractCountryCodeFromText, stripLeadingFlagEmoji } from "
 import { formatBytes, formatNumber } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { api, type TimeRange } from "@/lib/api";
+import {
+  getProxiesQueryKey,
+  getProxyDomainsQueryKey,
+  getProxyIPsQueryKey,
+} from "@/lib/stats-query-keys";
 import { Favicon } from "@/components/favicon";
 import { DomainStatsTable, IPStatsTable } from "@/components/stats-tables";
 import { COLORS } from "@/lib/stats-utils";
-import type { ProxyStats, DomainStats, IPStats } from "@clashmaster/shared";
+import type { ProxyStats } from "@clashmaster/shared";
 
 interface InteractiveProxyStatsProps {
-  data: ProxyStats[];
+  data?: ProxyStats[];
   activeBackendId?: number;
   timeRange?: TimeRange;
   backendStatus?: "healthy" | "unhealthy" | "unknown";
@@ -70,16 +76,19 @@ export function InteractiveProxyStats({
     if (!timeRange?.start && !timeRange?.end) return undefined;
     return { start: timeRange.start, end: timeRange.end };
   }, [timeRange?.start, timeRange?.end]);
+
+  const proxyListQuery = useQuery({
+    queryKey: getProxiesQueryKey(activeBackendId, 50, stableTimeRange),
+    queryFn: () => api.getProxies(activeBackendId, 50, stableTimeRange),
+    enabled: !data && !!activeBackendId,
+    placeholderData: keepPreviousData,
+  });
+  const proxyData = data ?? proxyListQuery.data ?? [];
+  const listLoading = !data && proxyListQuery.isLoading && !proxyListQuery.data;
   
   const [selectedProxy, setSelectedProxy] = useState<string | null>(null);
-  const [proxyDomains, setProxyDomains] = useState<DomainStats[]>([]);
-  const [proxyIPs, setProxyIPs] = useState<IPStats[]>([]);
-  const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("domains");
   const [showDomainBarLabels, setShowDomainBarLabels] = useState(true);
-  const requestIdRef = useRef(0);
-  const prevSelectedProxyRef = useRef<string | null>(null);
-  const prevBackendRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     const media = window.matchMedia("(min-width: 640px)");
@@ -90,8 +99,8 @@ export function InteractiveProxyStats({
   }, []);
 
   const chartData = useMemo(() => {
-    if (!data) return [];
-    return data.map((proxy, index) => ({
+    if (!proxyData) return [];
+    return proxyData.map((proxy, index) => ({
       name: simplifyProxyName(proxy.chain),
       rawName: proxy.chain,
       value: proxy.totalDownload + proxy.totalUpload,
@@ -102,44 +111,15 @@ export function InteractiveProxyStats({
       countryCode: getProxyCountryCode(proxy.chain),
       rank: index,
     }));
-  }, [data]);
+  }, [proxyData]);
 
   const totalTraffic = useMemo(() => chartData.reduce((sum, item) => sum + item.value, 0), [chartData]);
   const topProxies = useMemo(() => [...chartData].sort((a, b) => b.value - a.value).slice(0, 4), [chartData]);
   const maxTotal = useMemo(() => chartData.length ? Math.max(...chartData.map(p => p.value)) : 1, [chartData]);
 
-  const loadProxyDetails = useCallback(async (chain: string, options?: { background?: boolean }) => {
-    const background = options?.background ?? false;
-    const requestId = ++requestIdRef.current;
-    if (!background) {
-      setLoading(true);
-    }
-    try {
-      const [domains, ips] = await Promise.all([
-        api.getProxyDomains(chain, activeBackendId, stableTimeRange),
-        api.getProxyIPs(chain, activeBackendId, stableTimeRange),
-      ]);
-      if (requestId !== requestIdRef.current) return;
-      setProxyDomains(domains);
-      setProxyIPs(ips);
-    } catch (err) {
-      console.error(`Failed to load details for ${chain}:`, err);
-      if (!background) {
-        setProxyDomains([]);
-        setProxyIPs([]);
-      }
-    } finally {
-      if (!background && requestId === requestIdRef.current) {
-        setLoading(false);
-      }
-    }
-  }, [activeBackendId, stableTimeRange]);
-
   useEffect(() => {
     if (chartData.length === 0) {
       setSelectedProxy(null);
-      setProxyDomains([]);
-      setProxyIPs([]);
       return;
     }
     const exists = !!selectedProxy && chartData.some((item) => item.rawName === selectedProxy);
@@ -148,18 +128,33 @@ export function InteractiveProxyStats({
     }
   }, [chartData, selectedProxy]);
 
-  useEffect(() => {
-    if (!selectedProxy) return;
+  const proxyDomainsQuery = useQuery({
+    queryKey: getProxyDomainsQueryKey(selectedProxy, activeBackendId, stableTimeRange),
+    queryFn: () =>
+      api.getProxyDomains(
+        selectedProxy!,
+        activeBackendId,
+        stableTimeRange,
+      ),
+    enabled: !!activeBackendId && !!selectedProxy,
+    placeholderData: keepPreviousData,
+  });
 
-    const selectedChanged = prevSelectedProxyRef.current !== selectedProxy;
-    const backendChanged = prevBackendRef.current !== activeBackendId;
+  const proxyIPsQuery = useQuery({
+    queryKey: getProxyIPsQueryKey(selectedProxy, activeBackendId, stableTimeRange),
+    queryFn: () =>
+      api.getProxyIPs(
+        selectedProxy!,
+        activeBackendId,
+        stableTimeRange,
+      ),
+    enabled: !!activeBackendId && !!selectedProxy,
+    placeholderData: keepPreviousData,
+  });
 
-    prevSelectedProxyRef.current = selectedProxy;
-    prevBackendRef.current = activeBackendId;
-    loadProxyDetails(selectedProxy, {
-      background: !selectedChanged && !backendChanged,
-    });
-  }, [selectedProxy, activeBackendId, timeRange?.start, timeRange?.end, loadProxyDetails]);
+  const proxyDomains = proxyDomainsQuery.data ?? [];
+  const proxyIPs = proxyIPsQuery.data ?? [];
+  const loading = !!selectedProxy && !proxyDomainsQuery.data && !proxyIPsQuery.data;
 
   const handleProxyClick = useCallback((rawName: string) => {
     if (selectedProxy !== rawName) {
@@ -188,6 +183,18 @@ export function InteractiveProxyStats({
   const emptyHint = isBackendUnavailable
     ? backendT("backendUnavailableHint")
     : t("noDataHint");
+
+  if (listLoading) {
+    return (
+      <Card>
+        <CardContent className="p-5 sm:p-6">
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (chartData.length === 0) {
     return (
