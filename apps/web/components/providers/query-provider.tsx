@@ -2,10 +2,15 @@
 
 import { useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import dynamic from "next/dynamic";
 
 import { QUERY_CONFIG } from "@/lib/query-config";
 
-import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+// Dynamically import devtools only on client side to avoid SSR hydration mismatch
+const ReactQueryDevtools = dynamic(
+  () => import("@tanstack/react-query-devtools").then((mod) => mod.ReactQueryDevtools),
+  { ssr: false }
+);
 
 interface QueryProviderProps {
   children: ReactNode;

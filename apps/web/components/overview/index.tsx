@@ -34,6 +34,7 @@ interface OverviewTabProps {
   autoRefresh?: boolean;
   onNavigate?: (tab: string) => void;
   backendStatus?: "healthy" | "unhealthy" | "unknown";
+  isLoading?: boolean;
 }
 
 const THIRTY_MINUTES_MS = 30 * 60 * 1000;
@@ -101,6 +102,7 @@ export function OverviewTab({
   autoRefresh = true,
   onNavigate,
   backendStatus = "unknown",
+  isLoading,
 }: OverviewTabProps) {
   const dashboardT = useTranslations("dashboard");
   const queryClient = useQueryClient();
@@ -218,7 +220,7 @@ export function OverviewTab({
   const wsTrendConnected = wsTrendStatus === "connected";
 
   // Use the new hook for data fetching
-  const { data: trendData, isLoading: trendLoading } = useTrafficTrend({
+  const { data: trendData, isLoading: trendLoading, isFetching: trendFetching } = useTrafficTrend({
     activeBackendId,
     minutes: trendQuery.minutes,
     bucketMinutes: trendQuery.bucketMinutes,
@@ -277,7 +279,7 @@ export function OverviewTab({
         timeRange={canUseTrendSelector ? trendTimeRange : undefined}
         timeRangeOptions={trendTimeOptions}
         onTimeRangeChange={canUseTrendSelector ? handleTimeRangeChange : undefined}
-        isLoading={trendLoading}
+        isLoading={isLoading || trendLoading || (trendFetching && (!trendData || trendData.length === 0))}
         emptyHint={backendStatus === "unhealthy" ? dashboardT("backendUnavailableHint") : undefined}
       />
       
@@ -288,6 +290,7 @@ export function OverviewTab({
           sortBy={domainSort}
           onSortChange={setDomainSort}
           onViewAll={() => onNavigate?.("domains")}
+          isLoading={isLoading}
         />
         
         {/* Top Proxies */}
@@ -296,6 +299,7 @@ export function OverviewTab({
           sortBy={proxySort}
           onSortChange={setProxySort}
           onViewAll={() => onNavigate?.("proxies")}
+          isLoading={isLoading}
         />
         
         {/* Top Countries */}
@@ -304,6 +308,7 @@ export function OverviewTab({
           sortBy={countrySort}
           onSortChange={setCountrySort}
           onViewAll={() => onNavigate?.("countries")}
+          isLoading={isLoading}
         />
       </div>
     </div>
