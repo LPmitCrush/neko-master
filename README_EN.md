@@ -48,6 +48,7 @@ Just like a cat—quiet yet keen—Neko Master focuses on lightweight, precise a
 - [❓ FAQ](#-faq)
 - [📁 Project Structure](#-project-structure)
 - [🛠️ Tech Stack](#️-tech-stack)
+- [📝 Changelog](./CHANGELOG.en.md)
 - [📄 License](#-license)
 
 ## 🚀 Quick Start
