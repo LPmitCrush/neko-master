@@ -14,6 +14,7 @@ import {
   MoreVertical,
   Info,
   LogOut,
+  ShieldAlert,
 } from "lucide-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
@@ -51,6 +52,8 @@ interface Backend {
 }
 
 import { useAuth } from "@/lib/auth";
+import { useAuthState } from "@/lib/auth-queries"; // Added
+import { useTranslations } from "next-intl"; // Added
 
 interface HeaderProps {
   // Backend data
@@ -117,6 +120,9 @@ export function Header({
   dashboardT,
 }: HeaderProps) {
   const { logout, authState } = useAuth();
+  const { data: authQueryState } = useAuthState(); // Added
+  const isShowcase = authQueryState?.showcaseMode ?? false; // Added
+  const navT = useTranslations("nav"); // Added
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/40 bg-background/80 backdrop-blur-md">
@@ -351,6 +357,17 @@ export function Header({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
+                {/* Showcase Mode Indicator */}
+                {isShowcase && (
+                  <>
+                    <DropdownMenuLabel className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                      <ShieldAlert className="w-4 h-4" />
+                      {navT("showcaseMode")}
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+
                 {/* Auto Refresh Toggle */}
                 <DropdownMenuLabel className="flex items-center gap-2">
                   <RefreshCw className="w-4 h-4" />

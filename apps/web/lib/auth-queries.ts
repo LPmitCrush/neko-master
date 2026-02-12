@@ -9,6 +9,7 @@ export interface AuthState {
   enabled: boolean;
   hasToken: boolean;
   forceAccessControlOff?: boolean;
+  showcaseMode?: boolean;
 }
 
 // API functions

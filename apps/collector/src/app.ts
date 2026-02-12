@@ -42,9 +42,9 @@ export async function createApp(options: AppOptions) {
   });
 
   // Create services
-  const backendService = new BackendService(db, realtimeStore);
-  const statsService = new StatsService(db, realtimeStore);
   const authService = new AuthService(db);
+  const backendService = new BackendService(db, realtimeStore, authService);
+  const statsService = new StatsService(db, realtimeStore);
 
   // Decorate Fastify instance with services
   app.decorate('backendService', backendService);
@@ -75,6 +75,10 @@ export async function createApp(options: AppOptions) {
   });
 
   app.post('/api/db/cleanup', async (request, reply) => {
+    if (authService.isShowcaseMode()) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+
     const body = request.body as { days?: number; backendId?: number };
     const days = body?.days;
     const backendId = typeof body?.backendId === 'number' ? body.backendId : undefined;
@@ -111,7 +115,11 @@ export async function createApp(options: AppOptions) {
     };
   });
 
-  app.post('/api/db/vacuum', async () => {
+  app.post('/api/db/vacuum', async (request, reply) => {
+    if (authService.isShowcaseMode()) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+
     db.vacuum();
     return { message: 'Database vacuumed successfully' };
   });
@@ -121,6 +129,10 @@ export async function createApp(options: AppOptions) {
   });
 
   app.put('/api/db/retention', async (request, reply) => {
+    if (authService.isShowcaseMode()) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+
     const body = request.body as {
       connectionLogsDays?: number;
       hourlyStatsDays?: number;

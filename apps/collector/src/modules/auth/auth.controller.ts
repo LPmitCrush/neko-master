@@ -50,6 +50,10 @@ export async function authController(app: FastifyInstance) {
    * but requires existing token if already enabled)
    */
   app.post('/enable', async (request, reply) => {
+    if (authService.isShowcaseMode()) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+
     const body = request.body as { token?: string };
     const token = body?.token;
 
@@ -76,6 +80,10 @@ export async function authController(app: FastifyInstance) {
    * Disable authentication (requires valid token)
    */
   app.post('/disable', async (request, reply) => {
+    if (authService.isShowcaseMode()) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+
     const body = request.body as { token?: string };
     const token = body?.token;
 
@@ -108,6 +116,10 @@ export async function authController(app: FastifyInstance) {
    * Update token (requires valid existing token)
    */
   app.put('/token', async (request, reply) => {
+    if (authService.isShowcaseMode()) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+
     const body = request.body as { currentToken?: string; newToken?: string };
     const { currentToken, newToken } = body;
 

@@ -11,7 +11,8 @@
     "proxies": "Proxies",
     "rules": "Rules",
     "network": "Network",
-    "settings": "Settings"
+    "settings": "Settings",
+    "showcaseMode": "Showcase Mode"
   },
   "header": {
     "title": "Neko Master",
@@ -71,7 +72,7 @@
   "stats": {
     "totalDownload": "Total Download",
     "totalUpload": "Total Upload",
-    "totalConnections": "Total Connections",
+    "totalConnections": "Connections",
     "uniqueDomains": "Unique Domains",
     "todayDownload": "Today's Download",
     "todayUpload": "Today's Upload",
@@ -411,6 +412,9 @@
     "retentionUpdated": "Storage settings saved",
     "retentionUpdateFailed": "Failed to save settings",
     "invalidToken": "Invalid token format",
+    "showcaseModeAddDisabled": "Adding backends is disabled in showcase mode",
+    "showcaseModeSecurityDisabled": "Security settings are locked in showcase mode",
+    "showcaseModeDbDisabled": "Database operations are disabled in showcase mode",
     "auth": {
       "title": "Access Control",
       "description": "Enable access control to protect your dashboard data",

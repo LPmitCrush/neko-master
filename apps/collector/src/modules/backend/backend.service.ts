@@ -14,10 +14,29 @@ import type {
   CreateBackendResult,
 } from './backend.types.js';
 
+import type { AuthService } from '../auth/auth.service.js';
+
+/**
+ * Mask URL for showcase mode - hides host, port, credentials
+ * Handles various URL formats including IPv6 addresses
+ */
+function maskUrl(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    // Only keep protocol, mask everything else
+    return `${urlObj.protocol}//******`;
+  } catch {
+    // If URL parsing fails, use regex fallback
+    // This regex handles: protocol://[anything-until-slash-or-end]
+    return url.replace(/:\/\/[^\/]+/, '://******');
+  }
+}
+
 export class BackendService {
   constructor(
     private db: StatsDatabase,
     private realtimeStore: RealtimeStore,
+    private authService: AuthService,
   ) {}
 
   /**
@@ -25,9 +44,12 @@ export class BackendService {
    */
   getAllBackends(): BackendResponse[] {
     const backends = this.db.getAllBackends();
+    const isShowcase = this.authService.isShowcaseMode();
+
     return backends.map(({ token, ...rest }) => ({
       ...rest,
       hasToken: !!token,
+      url: isShowcase ? maskUrl(rest.url) : rest.url,
     }));
   }
 
@@ -40,7 +62,13 @@ export class BackendService {
       return { error: 'No active backend configured' };
     }
     const { token, ...rest } = backend;
-    return { ...rest, hasToken: !!token };
+    const isShowcase = this.authService.isShowcaseMode();
+
+    return { 
+      ...rest, 
+      hasToken: !!token,
+      url: isShowcase ? maskUrl(rest.url) : rest.url,
+    };
   }
 
   /**
@@ -48,9 +76,12 @@ export class BackendService {
    */
   getListeningBackends(): BackendResponse[] {
     const backends = this.db.getListeningBackends();
+    const isShowcase = this.authService.isShowcaseMode();
+
     return backends.map(({ token, ...rest }) => ({
       ...rest,
       hasToken: !!token,
+      url: isShowcase ? maskUrl(rest.url) : rest.url,
     }));
   }
 
@@ -58,7 +89,16 @@ export class BackendService {
    * Get a single backend by ID
    */
   getBackend(id: number): BackendConfig | undefined {
-    return this.db.getBackend(id);
+    const backend = this.db.getBackend(id);
+    if (!backend) return undefined;
+
+    if (this.authService.isShowcaseMode()) {
+      return {
+        ...backend,
+        url: maskUrl(backend.url),
+      };
+    }
+    return backend;
   }
 
   /**

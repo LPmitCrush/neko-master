@@ -283,7 +283,7 @@ function parseUrl(url: string): { host: string; port: string; ssl: boolean } {
   try {
     const urlObj = new URL(url);
     return {
-      host: urlObj.hostname,
+      host: decodeURIComponent(urlObj.hostname),
       port: urlObj.port || (urlObj.protocol === "https:" ? "443" : "80"),
       ssl: urlObj.protocol === "https:",
     };
@@ -355,6 +355,7 @@ export function BackendConfigDialog({
   // Auth State from React Query
   const { data: authState } = useAuthState();
   const authEnabled = authState?.enabled ?? false;
+  const isShowcase = authState?.showcaseMode ?? false;
 
   // Local auth form state
   const [authToken, setAuthToken] = useState("");
@@ -1053,6 +1054,7 @@ export function BackendConfigDialog({
                                 handleToggleListening(backend.id, checked)
                               }
                               className="data-[state=checked]:bg-green-500"
+                              disabled={isShowcase}
                             />
                             <span className="text-xs text-muted-foreground hidden sm:inline">
                               {t("collect")}
@@ -1108,7 +1110,8 @@ export function BackendConfigDialog({
                               size="icon"
                               className="h-8 w-8"
                               onClick={() => startEdit(backend)}
-                              title={commonT("edit")}>
+                              title={commonT("edit")}
+                              disabled={isShowcase}>
                               <Edit2 className="w-4 h-4" />
                             </Button>
 
@@ -1117,7 +1120,8 @@ export function BackendConfigDialog({
                               size="icon"
                               className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
                               onClick={() => openDeleteDialog(backend.id)}
-                              title={commonT("delete")}>
+                              title={commonT("delete")}
+                              disabled={isShowcase}>
                               <Trash2 className="w-4 h-4" />
                             </Button>
                           </div>
@@ -1154,6 +1158,11 @@ export function BackendConfigDialog({
                         ? t("firstTimeTitle")
                         : t("addNew")}
                     </h4>
+                    {isShowcase ? (
+                      <div className="text-sm text-muted-foreground italic">
+                        {t("showcaseModeAddDisabled") || "Adding backends is disabled in showcase mode"}
+                      </div>
+                    ) : (
                     <div className="space-y-3">
                       <div className="grid grid-cols-2 gap-3">
                         <div>
@@ -1251,8 +1260,10 @@ export function BackendConfigDialog({
                         </Button>
                       </div>
                     </div>
+                    )}
                   </div>
                 ) : backends.length > 0 ? (
+                  !isShowcase && (
                   <Button
                     variant="outline"
                     className="w-full border-dashed"
@@ -1263,6 +1274,7 @@ export function BackendConfigDialog({
                     <Plus className="w-4 h-4 mr-2" />
                     {t("addNew")}
                   </Button>
+                  )
                 ) : null}
               </div>
             ) : activeTab === "preferences" ? (
@@ -1317,7 +1329,7 @@ export function BackendConfigDialog({
                           handleDisableAuth();
                         }
                        }}
-                       disabled={authLoading}
+                       disabled={authLoading || isShowcase}
                     />
                   </div>
 
@@ -1343,7 +1355,7 @@ export function BackendConfigDialog({
                             "pl-10 pr-10 transition-all duration-200",
                             isTokenInvalid && "border-destructive ring-destructive/20 focus-visible:ring-destructive"
                           )}
-                          disabled={authLoading}
+                          disabled={authLoading || isShowcase}
                         />
                         <button
                           type="button"
@@ -1387,6 +1399,7 @@ export function BackendConfigDialog({
                         size="sm" 
                         className="h-8 bg-background/50 hover:bg-background/80 border-green-500/30 text-green-700 dark:text-green-400"
                         onClick={() => setChangeTokenDialogOpen(true)}
+                        disabled={isShowcase}
                       >
                         <Key className="w-3.5 h-3.5 mr-1.5" />
                         {authState?.forceAccessControlOff ? "Reset Password" : t("auth.changeToken")}
@@ -1464,7 +1477,7 @@ export function BackendConfigDialog({
                         <button
                           key={preset.key}
                           onClick={() => applyPreset(preset.key)}
-                          disabled={updatingRetention}
+                          disabled={updatingRetention || isShowcase}
                           className={cn(
                             "px-3 py-1.5 text-sm rounded-md border transition-all",
                             isActive
@@ -1498,7 +1511,7 @@ export function BackendConfigDialog({
                           const days = parseInt(e.target.value) || 1;
                           applyCustomDays(Math.min(90, Math.max(1, days)));
                         }}
-                        disabled={updatingRetention}
+                        disabled={updatingRetention || isShowcase}
                         className="w-14 h-6 text-sm text-center p-0 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
                       />
                       <span className="text-xs text-muted-foreground">
@@ -1522,28 +1535,28 @@ export function BackendConfigDialog({
                       variant="outline"
                       size="sm"
                       onClick={() => openClearLogsDialog(1)}
-                      disabled={clearingLogs}>
+                      disabled={clearingLogs || isShowcase}>
                       {t("clear1Day")}
                     </Button>
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => openClearLogsDialog(7)}
-                      disabled={clearingLogs}>
+                      disabled={clearingLogs || isShowcase}>
                       {t("clear7Days")}
                     </Button>
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => openClearLogsDialog(30)}
-                      disabled={clearingLogs}>
+                      disabled={clearingLogs || isShowcase}>
                       {t("clear30Days")}
                     </Button>
                     <Button
                       variant="destructive"
                       size="sm"
                       onClick={() => openClearLogsDialog(0)}
-                      disabled={clearingLogs}>
+                      disabled={clearingLogs || isShowcase}>
                       {t("clearAll")}
                     </Button>
                   </div>

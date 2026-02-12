@@ -10,6 +10,10 @@
 </p>
 
 <p align="center">
+  <b>English</b> | <a href="./README.md">中文</a>
+</p>
+
+<p align="center">
   <a href="https://github.com/foru17/neko-master/stargazers"><img src="https://img.shields.io/github/stars/foru17/neko-master?style=flat-square&color=yellow" alt="Stars"></a>
   <a href="https://hub.docker.com/r/foru17/neko-master"><img src="https://img.shields.io/docker/pulls/foru17/neko-master?style=flat-square&color=blue&logo=docker" alt="Docker Pulls"></a>
   <a href="https://hub.docker.com/r/foru17/neko-master"><img src="https://img.shields.io/docker/v/foru17/neko-master?style=flat-square&label=Docker&color=2496ED" alt="Docker Version"></a>
@@ -27,7 +31,7 @@
 > proxy subscription, or cross-network connectivity.
 > All data is collected from the user's own network environment.
 >
-> Please use this software in compliance with applicable laws and regulations.
+> This project is open-sourced under the MIT License. We assume no responsibility for any consequences resulting from the use of this software. Please use it in compliance with applicable laws and regulations.
 
 ![Neko Master Overview](./assets/neko-master-overview.png)
 ![Neko Master Rules](./assets/neko-master-rules.png)

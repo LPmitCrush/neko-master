@@ -10,6 +10,10 @@
 </p>
 
 <p align="center">
+   <b>中文 | <a href="./README.en.md">English</a></b>
+</p>
+
+<p align="center">
   <a href="https://github.com/foru17/neko-master/stargazers"><img src="https://img.shields.io/github/stars/foru17/neko-master?style=flat-square&color=yellow" alt="Stars"></a>
   <a href="https://hub.docker.com/r/foru17/neko-master"><img src="https://img.shields.io/docker/pulls/foru17/neko-master?style=flat-square&color=blue&logo=docker" alt="Docker Pulls"></a>
   <a href="https://hub.docker.com/r/foru17/neko-master"><img src="https://img.shields.io/docker/v/foru17/neko-master?style=flat-square&label=Docker&color=2496ED" alt="Docker Version"></a>
@@ -26,7 +30,7 @@
 > 本项目 **不提供任何网络接入服务、代理订阅或跨网络连接功能**。
 > 所有数据均来源于用户自有网络环境。
 >
-> 请在符合当地法律法规的前提下使用本软件。
+> 本项目遵循 MIT 协议开源，不对因使用本软件产生的任何后果承担责任。请在合规范围内使用。
 
 ![Neko Master Overview](./assets/neko-master-overview.png)
 ![Neko Master Rules](./assets/neko-master-rules.png)

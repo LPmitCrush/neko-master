@@ -143,10 +143,10 @@ export function StatsCards({ data, backendStatus }: StatsCardsProps) {
         <>
           <PlaceholderStatCard icon={Download} label={t("totalDownload")} color="#3B82F6" />
           <PlaceholderStatCard icon={Upload} label={t("totalUpload")} color="#8B5CF6" />
+          <PlaceholderStatCard icon={Server} label={t("total")} color="#EC4899" />
           <PlaceholderStatCard icon={Activity} label={t("totalConnections")} color="#10B981" />
           <PlaceholderStatCard icon={Globe} label={t("domains")} color="#06B6D4" />
           <PlaceholderStatCard icon={Route} label={t("rules")} color="#F59E0B" />
-          <PlaceholderStatCard icon={Server} label={t("total")} color="#EC4899" />
         </>
       ) : (
         <>
@@ -163,6 +163,13 @@ export function StatsCards({ data, backendStatus }: StatsCardsProps) {
             icon={Upload}
             label={t("totalUpload")}
             color="#8B5CF6"
+          />
+          <AnimatedStatCard
+            value={(data?.totalDownload || 0) + (data?.totalUpload || 0)}
+            formatter={formatBytes}
+            label={t("total")}
+            icon={Server}
+            color="#EC4899"
           />
           <AnimatedStatCard
             value={data?.totalConnections || 0}
@@ -184,13 +191,6 @@ export function StatsCards({ data, backendStatus }: StatsCardsProps) {
             label={t("rules")}
             icon={Route}
             color="#F59E0B"
-          />
-          <AnimatedStatCard
-            value={(data?.totalDownload || 0) + (data?.totalUpload || 0)}
-            formatter={formatBytes}
-            label={t("total")}
-            icon={Server}
-            color="#EC4899"
           />
         </>
       )}

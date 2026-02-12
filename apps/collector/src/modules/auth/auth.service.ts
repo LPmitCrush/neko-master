@@ -48,7 +48,15 @@ export class AuthService {
       enabled: forcedOff ? false : config.enabled,
       hasToken: !!config.tokenHash,
       forceAccessControlOff: forcedOff,
+      showcaseMode: this.isShowcaseMode(),
     };
+  }
+
+  /**
+   * Check if showcase mode is enabled via environment variable
+   */
+  isShowcaseMode(): boolean {
+    return process.env.SHOWCASE_SITE_MODE === 'true';
   }
 
   /**

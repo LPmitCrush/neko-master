@@ -45,6 +45,10 @@ const backendController: FastifyPluginAsync = async (fastify: FastifyInstance): 
 
   // Create new backend
   fastify.post<{ Body: CreateBackendInput }>('/', async (request, reply) => {
+    if (fastify.authService.isShowcaseMode()) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+
     const { name, url, token } = request.body;
     
     if (!name || !url) {
@@ -64,6 +68,10 @@ const backendController: FastifyPluginAsync = async (fastify: FastifyInstance): 
 
   // Update backend
   fastify.put<{ Params: BackendParams; Body: UpdateBackendInput }>('/:id', async (request, reply) => {
+    if (fastify.authService.isShowcaseMode()) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+
     const { id } = request.params;
     const backendId = parseInt(id);
     
@@ -78,6 +86,10 @@ const backendController: FastifyPluginAsync = async (fastify: FastifyInstance): 
 
   // Delete backend
   fastify.delete<{ Params: BackendParams }>('/:id', async (request, reply) => {
+    if (fastify.authService.isShowcaseMode()) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+
     const { id } = request.params;
     const backendId = parseInt(id);
     
@@ -92,6 +104,10 @@ const backendController: FastifyPluginAsync = async (fastify: FastifyInstance): 
 
   // Set active backend
   fastify.post<{ Params: BackendParams }>('/:id/activate', async (request, reply) => {
+    if (fastify.authService.isShowcaseMode()) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+
     const { id } = request.params;
     const backendId = parseInt(id);
     
@@ -106,6 +122,10 @@ const backendController: FastifyPluginAsync = async (fastify: FastifyInstance): 
 
   // Set listening state for a backend
   fastify.post<{ Params: BackendParams; Body: ListeningBody }>('/:id/listening', async (request, reply) => {
+    if (fastify.authService.isShowcaseMode()) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+
     const { id } = request.params;
     const { listening } = request.body;
     const backendId = parseInt(id);
@@ -121,6 +141,10 @@ const backendController: FastifyPluginAsync = async (fastify: FastifyInstance): 
 
   // Test existing backend connection (uses stored token)
   fastify.post<{ Params: BackendParams }>('/:id/test', async (request, reply) => {
+    if (fastify.authService.isShowcaseMode()) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+
     const { id } = request.params;
     const backendId = parseInt(id);
     
@@ -134,13 +158,21 @@ const backendController: FastifyPluginAsync = async (fastify: FastifyInstance): 
   });
 
   // Test backend connection
-  fastify.post<{ Body: TestConnectionInput }>('/test', async (request) => {
+  fastify.post<{ Body: TestConnectionInput }>('/test', async (request, reply) => {
+    if (fastify.authService.isShowcaseMode()) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+
     const result = await service.testConnection(request.body);
     return result;
   });
 
   // Clear all data for a specific backend
   fastify.post<{ Params: BackendParams }>('/:id/clear-data', async (request, reply) => {
+    if (fastify.authService.isShowcaseMode()) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+
     const { id } = request.params;
     const backendId = parseInt(id);
     

@@ -16,6 +16,7 @@ import {
   Smartphone,
   RefreshCw,
   X,
+  ShieldAlert, // Added
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useVersionCheck } from "@/hooks/use-version-check";
 import { usePWAInstall } from "@/hooks/use-pwa-install";
+import { useAuthState } from "@/lib/auth-queries"; // Added
 
 interface NavigationProps {
   activeTab: string;
@@ -58,6 +60,10 @@ export function Navigation({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const t = useTranslations("nav");
+
+  const { data: authState } = useAuthState(); // Added
+  const isShowcase = authState?.showcaseMode ?? false; // Added
+
   const headerT = useTranslations("header");
   const backendT = useTranslations("backend");
   const aboutT = useTranslations("about");
@@ -109,7 +115,7 @@ export function Navigation({
             />
           </div>
           <div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-2">
               <h1 className="font-bold text-xl leading-tight whitespace-nowrap">
                 {headerT("title")}
               </h1>
@@ -117,7 +123,10 @@ export function Navigation({
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <span
-                      className={cn("relative inline-flex shrink-0", statusDotSizeClass)}
+                      className={cn(
+                        "relative inline-flex shrink-0",
+                        statusDotSizeClass,
+                      )}
                       aria-label={statusText}
                       role="status">
                       <span
@@ -150,11 +159,23 @@ export function Navigation({
                 </Tooltip>
               </TooltipProvider>
             </div>
-            <p className="text-xs leading-4 text-muted-foreground/60 min-h-8">
+            <p className="text-xs leading-4 text-muted-foreground/60 min-h-8 mt-0.5">
               {headerT("subtitle")}
             </p>
           </div>
         </div>
+
+        {/* Showcase Mode Indicator */}
+        {isShowcase && (
+          <div className="px-4 pt-4 pb-2">
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 transition-all hover:bg-amber-500/15">
+              <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                {t("showcaseMode")}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Nav Items */}
         <nav className="flex-1 p-4 space-y-1">
