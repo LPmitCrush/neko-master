@@ -387,7 +387,7 @@
     "collect": "Collect",
     "setDisplay": "Set Display",
     "selectBackend": "Select Backend",
-    "manageBackends": "Manage Backends",
+    "manageBackends": "Settings",
     "firstBackendAutoActive": "First backend automatically set as active",
     "verificationFailed": "Backend verification failed. Please check the host address and token.",
     "preferencesTab": "Preferences",

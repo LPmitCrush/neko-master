@@ -89,6 +89,7 @@ interface HeaderProps {
 
   // Loading states
   isLoading: boolean;
+  isTransitioning?: boolean;
 
   // Translations
   backendT: (key: string) => string;
@@ -116,6 +117,7 @@ export function Header({
   pathname,
   onNavigate,
   isLoading,
+  isTransitioning,
   backendT,
   dashboardT,
 }: HeaderProps) {
@@ -123,6 +125,9 @@ export function Header({
   const { data: authQueryState } = useAuthState(); // Added
   const isShowcase = authQueryState?.showcaseMode ?? false; // Added
   const navT = useTranslations("nav"); // Added
+  const settingsT = useTranslations("settings");
+  const themeT = useTranslations("theme");
+  const aboutT = useTranslations("about");
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/40 bg-background/80 backdrop-blur-md">
@@ -408,35 +413,35 @@ export function Header({
                   ) : (
                     <Sun className="w-4 h-4" />
                   )}
-                  Theme
+                  {settingsT("theme")}
                 </DropdownMenuLabel>
                 <DropdownMenuItem
                   onClick={() => onThemeChange("light")}
                   className={theme === "light" ? "bg-muted" : ""}
                 >
                   <Sun className="w-4 h-4 mr-2 text-amber-500" />
-                  Light {theme === "light" && "✓"}
+                  {themeT("light")} {theme === "light" && "✓"}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => onThemeChange("dark")}
                   className={theme === "dark" ? "bg-muted" : ""}
                 >
                   <Moon className="w-4 h-4 mr-2 text-indigo-500" />
-                  Dark {theme === "dark" && "✓"}
+                  {themeT("dark")} {theme === "dark" && "✓"}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => onThemeChange("system")}
                   className={theme === "system" ? "bg-muted" : ""}
                 >
                   <Monitor className="w-4 h-4 mr-2 text-slate-500" />
-                  System {theme === "system" && "✓"}
+                  {themeT("system")} {theme === "system" && "✓"}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
 
                 {/* Language Selection */}
                 <DropdownMenuLabel className="flex items-center gap-2">
                   <Globe className="w-4 h-4" />
-                  Language
+                  {settingsT("language")}
                 </DropdownMenuLabel>
                 <DropdownMenuItem
                   onClick={() => {
@@ -473,7 +478,7 @@ export function Header({
                 {/* About */}
                 <DropdownMenuItem onClick={onOpenAboutDialog}>
                   <Info className="w-4 h-4 mr-2 text-primary" />
-                  About
+                  {aboutT("title")}
                 </DropdownMenuItem>
                 {authState?.enabled && (
                   <>
@@ -504,6 +509,12 @@ export function Header({
           )}
         </div>
       </div>
+      {/* Transition progress bar - sits at the bottom edge of the header */}
+      {isTransitioning && (
+        <div className="absolute bottom-0 left-0 right-0 h-0.5 overflow-hidden">
+          <div className="h-full w-1/3 bg-primary/60 rounded-full animate-progress-indeterminate" />
+        </div>
+      )}
     </header>
   );
 }

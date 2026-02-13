@@ -63,6 +63,7 @@ export interface UseDashboardReturn {
   wsConnected: boolean;
   wsRealtimeActive: boolean;
   isLoading: boolean;
+  isTransitioning: boolean;
 
   // Actions
   setActiveTab: (tab: TabId) => void;
@@ -368,6 +369,7 @@ export function useDashboard(): UseDashboardReturn {
     wsConnected,
     wsRealtimeActive,
     isLoading: summaryQuery.isLoading || (backendsQuery.isLoading && !backends.length),
+    isTransitioning: summaryQuery.isPlaceholderData === true || summaryQuery.isLoading,
 
     // Actions
     setActiveTab,

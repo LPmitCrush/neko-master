@@ -31,6 +31,7 @@ export default function DashboardPage() {
     backendStatusHint,
     queryError,
     isLoading,
+    isTransitioning,
 
     // Actions
     setActiveTab,
@@ -87,6 +88,7 @@ export default function DashboardPage() {
           pathname={pathname}
           onNavigate={(path) => router.push(path)}
           isLoading={isManualRefreshing}
+          isTransitioning={isTransitioning}
           backendT={backendT}
           dashboardT={dashboardT}
         />
@@ -100,6 +102,7 @@ export default function DashboardPage() {
             timeRange={timeRange}
             timePreset={timePreset}
             isLoading={isLoading}
+            isTransitioning={isTransitioning}
             autoRefresh={autoRefresh}
             activeBackendId={activeBackendId}
             backendStatus={backendStatus}

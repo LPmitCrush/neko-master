@@ -43,6 +43,7 @@ interface ContentProps {
   backendStatus: BackendStatus;
   onNavigate?: (tab: string) => void;
   isLoading?: boolean;
+  isTransitioning?: boolean;
 }
 
 // Overview Content Component
@@ -326,76 +327,85 @@ export function Content({
   activeBackendId,
   backendStatus,
   onNavigate,
+  isTransitioning,
 }: ContentProps) {
-  switch (activeTab) {
-    case "overview":
-      return (
-        <OverviewContent
-          data={data}
-          countryData={countryData}
-          error={error}
-          timeRange={timeRange}
-          timePreset={timePreset}
-          autoRefresh={autoRefresh}
-          activeBackendId={activeBackendId}
-          onNavigate={onNavigate}
-          backendStatus={backendStatus}
-        />
-      );
-    case "domains":
-      return (
-        <DomainsContent
-          activeBackendId={activeBackendId}
-          timeRange={timeRange}
-          autoRefresh={autoRefresh}
-        />
-      );
-    case "countries":
-      return <CountriesContent countryData={countryData} />;
-    case "proxies":
-      return (
-        <ProxiesContent
-          data={data?.proxyStats}
-          activeBackendId={activeBackendId}
-          timeRange={timeRange}
-          backendStatus={backendStatus}
-          autoRefresh={autoRefresh}
-        />
-      );
-    case "rules":
-      return (
-        <RulesContent
-          activeBackendId={activeBackendId}
-          timeRange={timeRange}
-          backendStatus={backendStatus}
-          autoRefresh={autoRefresh}
-        />
-      );
-    case "devices":
-      return (
-        <DevicesContent
-          data={data?.deviceStats}
-          activeBackendId={activeBackendId}
-          timeRange={timeRange}
-          backendStatus={backendStatus}
-          autoRefresh={autoRefresh}
-        />
-      );
-    case "network":
-      return <NetworkContent />;
-    default:
-      return (
-        <OverviewContent
-          data={data}
-          countryData={countryData}
-          error={error}
-          timeRange={timeRange}
-          timePreset={timePreset}
-          autoRefresh={autoRefresh}
-          activeBackendId={activeBackendId}
-          onNavigate={onNavigate}
-          backendStatus={backendStatus}
-        />
-      );
-  }
+  const renderContent = () => {
+    switch (activeTab) {
+      case "overview":
+        return (
+          <OverviewContent
+            data={data}
+            countryData={countryData}
+            error={error}
+            timeRange={timeRange}
+            timePreset={timePreset}
+            autoRefresh={autoRefresh}
+            activeBackendId={activeBackendId}
+            onNavigate={onNavigate}
+            backendStatus={backendStatus}
+          />
+        );
+      case "domains":
+        return (
+          <DomainsContent
+            activeBackendId={activeBackendId}
+            timeRange={timeRange}
+            autoRefresh={autoRefresh}
+          />
+        );
+      case "countries":
+        return <CountriesContent countryData={countryData} />;
+      case "proxies":
+        return (
+          <ProxiesContent
+            data={data?.proxyStats}
+            activeBackendId={activeBackendId}
+            timeRange={timeRange}
+            backendStatus={backendStatus}
+            autoRefresh={autoRefresh}
+          />
+        );
+      case "rules":
+        return (
+          <RulesContent
+            activeBackendId={activeBackendId}
+            timeRange={timeRange}
+            backendStatus={backendStatus}
+            autoRefresh={autoRefresh}
+          />
+        );
+      case "devices":
+        return (
+          <DevicesContent
+            data={data?.deviceStats}
+            activeBackendId={activeBackendId}
+            timeRange={timeRange}
+            backendStatus={backendStatus}
+            autoRefresh={autoRefresh}
+          />
+        );
+      case "network":
+        return <NetworkContent />;
+      default:
+        return (
+          <OverviewContent
+            data={data}
+            countryData={countryData}
+            error={error}
+            timeRange={timeRange}
+            timePreset={timePreset}
+            autoRefresh={autoRefresh}
+            activeBackendId={activeBackendId}
+            onNavigate={onNavigate}
+            backendStatus={backendStatus}
+          />
+        );
+    }
+  };
+
+  return (
+    <div>
+      {renderContent()}
+    </div>
+  );
 }

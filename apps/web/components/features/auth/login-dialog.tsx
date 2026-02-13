@@ -71,6 +71,7 @@ export function LoginDialog({ open, onOpenChange, onLogin }: LoginDialogProps) {
         className="sm:max-w-md overflow-visible bg-transparent shadow-none border-none p-0"
         showCloseButton={!isSuccess}
         aria-describedby={undefined}
+        onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <AnimatePresence mode="wait">
           {isSuccess ? (
@@ -153,7 +154,7 @@ export function LoginDialog({ open, onOpenChange, onLogin }: LoginDialogProps) {
               </div>
 
               {/* Card Content - In front of the cat */}
-              <div className="relative z-10 bg-background border shadow-lg rounded-lg p-6 pt-10">
+              <div className="relative z-10 bg-background border shadow-lg rounded-lg p-6 pt-10 dark:bg-[#1a1a2e] dark:border-white/15 dark:shadow-[0_0_60px_-4px_rgba(100,130,255,0.12)]">
                 <DialogTitle className="sr-only">
                   {t("loginTitle")}
                 </DialogTitle>
@@ -170,12 +171,11 @@ export function LoginDialog({ open, onOpenChange, onLogin }: LoginDialogProps) {
                       onFocus={() => setIsFocused(true)}
                       onBlur={() => setIsFocused(false)}
                       className={cn(
-                        "pl-10 pr-10",
+                        "pl-10 pr-10 dark:border-white/20",
                         error && "border-destructive focus-visible:ring-destructive"
                       )}
                       disabled={isLoading}
                       autoComplete="off"
-                      autoFocus
                     />
                     <button
                       type="button"
