@@ -763,12 +763,12 @@ export class StatsWebSocketServer {
     if (wantsFullSummary && !baseCacheValid) {
       this.baseSummaryCache.set(baseCacheKey, {
         summary,
-        topDomains: dbTopDomains,
-        topIPs: dbTopIPs,
-        proxyStats: dbProxyStats,
-        countryStats: dbCountryStats,
-        deviceStats: dbDeviceStats,
-        ruleStats: dbRuleStats,
+        topDomains: dbTopDomains!,
+        topIPs: dbTopIPs!,
+        proxyStats: dbProxyStats!,
+        countryStats: dbCountryStats!,
+        deviceStats: dbDeviceStats!,
+        ruleStats: dbRuleStats!,
         hourlyStats,
         ts: Date.now(),
       });
