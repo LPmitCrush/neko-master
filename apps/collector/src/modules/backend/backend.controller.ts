@@ -49,14 +49,14 @@ const backendController: FastifyPluginAsync = async (fastify: FastifyInstance): 
       return reply.status(403).send({ error: 'Forbidden' });
     }
 
-    const { name, url, token } = request.body;
+    const { name, url, token, type } = request.body;
     
     if (!name || !url) {
       return reply.status(400).send({ error: 'Name and URL are required' });
     }
     
     try {
-      const result = service.createBackend({ name, url, token });
+      const result = service.createBackend({ name, url, token, type });
       return result;
     } catch (error: any) {
       if (error.message?.includes('UNIQUE constraint failed')) {

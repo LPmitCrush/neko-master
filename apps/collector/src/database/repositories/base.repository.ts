@@ -5,6 +5,7 @@
  * All specific repositories should extend this class.
  */
 import type Database from 'better-sqlite3';
+import type { ProxyStats } from '@neko-master/shared';
 
 export abstract class BaseRepository {
   protected db: Database.Database;
@@ -151,6 +152,131 @@ export abstract class BaseRepository {
       out.push(v);
     }
     return out;
+  }
+
+  /**
+   * Aggregate proxy stats by first hop in chain
+   */
+  protected aggregateProxyStatsByFirstHop(rows: ProxyStats[]): ProxyStats[] {
+    const merged = new Map<string, ProxyStats>();
+
+    for (const row of rows) {
+      const hop = this.getChainFirstHop(row.chain || "") || "DIRECT";
+      const existing = merged.get(hop);
+      if (existing) {
+        existing.totalUpload += row.totalUpload;
+        existing.totalDownload += row.totalDownload;
+        existing.totalConnections += row.totalConnections;
+        if (row.lastSeen > existing.lastSeen) {
+          existing.lastSeen = row.lastSeen;
+        }
+      } else {
+        merged.set(hop, {
+          chain: hop,
+          totalUpload: row.totalUpload,
+          totalDownload: row.totalDownload,
+          totalConnections: row.totalConnections,
+          lastSeen: row.lastSeen,
+        });
+      }
+    }
+
+    return Array.from(merged.values()).sort(
+      (a, b) => (b.totalDownload + b.totalUpload) - (a.totalDownload + a.totalUpload),
+    );
+  }
+
+  /**
+   * Remap range rows from minute_dim_stats to full chains using baseline data
+   */
+  protected remapRangeRowsToFullChains(
+    rangeRows: Array<{ rule: string; chain: string; totalUpload: number; totalDownload: number; totalConnections: number }>,
+    baselineRows: Array<{ rule: string; chain: string; totalUpload: number; totalDownload: number; totalConnections: number }>,
+  ): Array<{ rule: string; chain: string; totalUpload: number; totalDownload: number; totalConnections: number }> {
+    if (rangeRows.length === 0) return [];
+    if (baselineRows.length === 0) return rangeRows;
+
+    const baselineByRuleHop = new Map<string, typeof baselineRows>();
+    const baselineByNormalizedRuleHop = new Map<string, typeof baselineRows>();
+    for (const row of baselineRows) {
+      const hop = this.getChainFirstHop(row.chain);
+      const key = `${row.rule}|||${hop}`;
+      const list = baselineByRuleHop.get(key);
+      if (list) { list.push(row); } else { baselineByRuleHop.set(key, [row]); }
+
+      const normalizedRule = this.normalizeFlowLabel(row.rule);
+      if (!normalizedRule) continue;
+      const normalizedKey = `${normalizedRule}|||${hop}`;
+      const normalizedList = baselineByNormalizedRuleHop.get(normalizedKey);
+      if (normalizedList) { normalizedList.push(row); } else { baselineByNormalizedRuleHop.set(normalizedKey, [row]); }
+    }
+
+    const mapped: typeof rangeRows = [];
+    for (const row of rangeRows) {
+      const parts = this.splitChainParts(row.chain);
+      const alreadyFull = parts.length > 1 && this.findRuleIndexInChain(parts, row.rule) !== -1;
+      if (alreadyFull) { mapped.push(row); continue; }
+
+      const hop = this.getChainFirstHop(row.chain);
+      const normalizedRule = this.normalizeFlowLabel(row.rule);
+      const candidates = baselineByRuleHop.get(`${row.rule}|||${hop}`) ||
+        (normalizedRule ? baselineByNormalizedRuleHop.get(`${normalizedRule}|||${hop}`) : undefined);
+      if (!candidates || candidates.length === 0) { mapped.push(row); continue; }
+
+      if (candidates.length === 1) {
+        mapped.push({ rule: row.rule, chain: candidates[0].chain, totalUpload: row.totalUpload, totalDownload: row.totalDownload, totalConnections: row.totalConnections });
+        continue;
+      }
+
+      const weights = candidates.map(c => { const t = c.totalUpload + c.totalDownload; return t > 0 ? t : Math.max(1, c.totalConnections); });
+      const uploadParts = this.allocateByWeights(row.totalUpload, weights);
+      const downloadParts = this.allocateByWeights(row.totalDownload, weights);
+      const connParts = this.allocateByWeights(row.totalConnections, weights);
+      for (let i = 0; i < candidates.length; i++) {
+        mapped.push({ rule: row.rule, chain: candidates[i].chain, totalUpload: uploadParts[i] || 0, totalDownload: downloadParts[i] || 0, totalConnections: connParts[i] || 0 });
+      }
+    }
+    return mapped;
+  }
+
+  /**
+   * Expand short chains for rules using rule_chain_traffic
+   */
+  protected expandShortChainsForRules(backendId: number, chains: string[], rules: string[]): string[] {
+    const normalizedChains = this.uniqueNonEmpty(chains);
+    if (normalizedChains.length === 0) return [];
+
+    const shortChains = normalizedChains.filter((c) => !c.includes(">"));
+    if (shortChains.length === 0) return normalizedChains;
+
+    const normalizedRules = this.uniqueNonEmpty(rules);
+    const whereParts: string[] = [];
+    const params: Array<string | number> = [backendId];
+
+    if (normalizedRules.length > 0) {
+      const rulePlaceholders = normalizedRules.map(() => "?").join(", ");
+      whereParts.push(`rule IN (${rulePlaceholders})`);
+      params.push(...normalizedRules);
+    }
+
+    const chainMatchers: string[] = [];
+    for (const chain of shortChains) {
+      chainMatchers.push("(chain = ? OR chain LIKE ?)");
+      params.push(chain, `${chain} > %`);
+    }
+    whereParts.push(`(${chainMatchers.join(" OR ")})`);
+
+    const whereClause = whereParts.length > 0 ? `AND ${whereParts.join(" AND ")}` : "";
+    const stmt = this.db.prepare(`
+      SELECT DISTINCT chain FROM rule_chain_traffic WHERE backend_id = ? ${whereClause} LIMIT 500
+    `);
+
+    const rows = stmt.all(...params) as Array<{ chain: string }>;
+    const expanded = this.uniqueNonEmpty(rows.map((r) => r.chain));
+    if (expanded.length === 0) return normalizedChains;
+
+    const fullInputChains = normalizedChains.filter((c) => c.includes(">"));
+    return this.uniqueNonEmpty([...expanded, ...fullInputChains]);
   }
 
   /**

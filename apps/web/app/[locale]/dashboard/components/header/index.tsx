@@ -44,11 +44,19 @@ import { cn } from "@/lib/utils";
 import type { TimeRange } from "@/lib/api";
 import type { BackendStatus, TimePreset } from "@/lib/types/dashboard";
 
+interface BackendHealth {
+  status: 'healthy' | 'unhealthy' | 'unknown';
+  lastChecked: number;
+  message?: string;
+  latency?: number;
+}
+
 interface Backend {
   id: number;
   name: string;
   is_active: boolean;
   listening: boolean;
+  health?: BackendHealth;
 }
 
 import { useAuth } from "@/lib/auth";
@@ -147,7 +155,7 @@ export function Header({
           </div>
 
           {/* Backend Selector */}
-          {backends.length > 0 && (
+          {listeningBackends.length > 0 && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -165,41 +173,60 @@ export function Header({
               <DropdownMenuContent align="start" className="w-56">
                 <DropdownMenuLabel>{backendT("backendsTab")}</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                {backends.map((backend) => (
-                  <DropdownMenuItem
-                    key={backend.id}
-                    onClick={() => onSwitchBackend(backend.id)}
-                    className="flex items-center justify-between"
-                  >
-                    <span
+                {listeningBackends.map((backend) => {
+                  const healthStatus = backend.health?.status;
+                  const isUnhealthy = healthStatus === 'unhealthy';
+                  
+                  return (
+                    <DropdownMenuItem
+                      key={backend.id}
+                      onClick={() => onSwitchBackend(backend.id)}
                       className={cn(
-                        "truncate",
-                        backend.is_active && "font-medium"
+                        "flex items-center justify-between",
+                        isUnhealthy && "text-red-600"
                       )}
                     >
-                      {backend.name}
-                    </span>
-                    <div className="flex items-center gap-1">
-                      {!!backend.is_active && (
-                        <Badge
-                          variant="default"
-                          className="text-[10px] h-5"
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={cn(
+                            "truncate",
+                            backend.is_active && "font-medium"
+                          )}
                         >
-                          {backendT("displaying")}
-                        </Badge>
-                      )}
-                      {!!backend.listening && !backend.is_active && (
-                        <Badge
-                          variant="secondary"
-                          className="text-[10px] h-5 gap-1"
-                        >
-                          <Radio className="w-2 h-2" />
-                          {backendT("collecting")}
-                        </Badge>
-                      )}
-                    </div>
-                  </DropdownMenuItem>
-                ))}
+                          {backend.name}
+                        </span>
+                        {isUnhealthy && (
+                          <AlertTriangle className="w-3 h-3 text-red-500" />
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {!!backend.is_active && (
+                          <Badge
+                            variant="default"
+                            className={cn(
+                              "text-[10px] h-5",
+                              isUnhealthy && "bg-red-500 hover:bg-red-600"
+                            )}
+                          >
+                            {isUnhealthy ? backendT("unhealthy") : backendT("displaying")}
+                          </Badge>
+                        )}
+                        {!!backend.listening && !backend.is_active && (
+                          <Badge
+                            variant="secondary"
+                            className={cn(
+                              "text-[10px] h-5 gap-1",
+                              isUnhealthy && "bg-red-100 text-red-600 border-red-200"
+                            )}
+                          >
+                            <Radio className={cn("w-2 h-2", isUnhealthy && "text-red-500")} />
+                            {isUnhealthy ? backendT("unhealthy") : backendT("collecting")}
+                          </Badge>
+                        )}
+                      </div>
+                    </DropdownMenuItem>
+                  );
+                })}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={onOpenBackendDialog}>
                   <Settings className="w-4 h-4 mr-2" />
@@ -212,16 +239,55 @@ export function Header({
           {/* Listening Indicators */}
           {listeningBackends.length > 0 && (
             <div className="hidden md:flex items-center gap-1">
-              {listeningBackends.slice(0, 3).map((backend) => (
-                <Badge
-                  key={backend.id}
-                  variant="outline"
-                  className="text-[10px] h-5 gap-1 px-1.5 border-green-500/30 text-green-600"
-                >
-                  <Radio className="w-2 h-2" />
-                  {backend.name}
-                </Badge>
-              ))}
+              {listeningBackends.slice(0, 3).map((backend) => {
+                // Determine color based on health status
+                const healthStatus = backend.health?.status;
+                const badgeClasses = {
+                  healthy: "border-green-500/30 text-green-600 bg-green-50/50",
+                  unhealthy: "border-red-500/30 text-red-600 bg-red-50/50",
+                  unknown: "border-gray-500/30 text-gray-500 bg-gray-50/50",
+                };
+                const iconClasses = {
+                  healthy: "text-green-500",
+                  unhealthy: "text-red-500",
+                  unknown: "text-gray-400",
+                };
+                const status = healthStatus || 'unknown';
+                const tooltipText = backend.health?.message || 
+                  (status === 'healthy' ? 'Connected' : status === 'unhealthy' ? 'Connection failed' : 'Checking...');
+                
+                return (
+                  <TooltipProvider key={backend.id} delayDuration={100}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "text-[10px] h-5 gap-1 px-1.5 cursor-pointer",
+                            badgeClasses[status]
+                          )}
+                        >
+                          <Radio className={cn("w-2 h-2", iconClasses[status])} />
+                          {backend.name}
+                        </Badge>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="text-xs">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="font-medium">{backend.name}</span>
+                          <span className={cn(
+                            "text-[10px]",
+                            status === 'healthy' ? "text-green-500" : 
+                            status === 'unhealthy' ? "text-red-500" : "text-gray-400"
+                          )}>
+                            {tooltipText}
+                            {backend.health?.latency && ` (${backend.health.latency}ms)`}
+                          </span>
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                );
+              })}
               {listeningBackends.length > 3 && (
                 <Badge variant="outline" className="text-[10px] h-5 px-1.5">
                   +{listeningBackends.length - 3}

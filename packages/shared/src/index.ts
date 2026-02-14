@@ -238,3 +238,81 @@ export interface AuthState {
   forceAccessControlOff?: boolean;
   showcaseMode?: boolean;
 }
+
+// Surge API Types
+export interface SurgeRequest {
+  id: string;
+  time: number;
+  timestamp?: string;
+  policyName: string;
+  originalPolicyName: string;
+  rule: string;
+  processPath: string;
+  remoteHost: string;
+  remoteAddress?: string;
+  remotePort?: number;
+  localAddress?: string;
+  localPort?: number;
+  sourceAddress?: string;
+  sourcePort?: number;
+  inBytes: number;
+  outBytes: number;
+  inCurrentSpeed?: number;
+  outCurrentSpeed?: number;
+  inMaxSpeed?: number;
+  outMaxSpeed?: number;
+  status?: string;
+  completed?: boolean;
+  disconnected?: boolean;
+  failed?: boolean;
+  rejected?: boolean;
+  startDate?: number;
+  completedDate?: number;
+  setupCompletedDate?: number;
+  URL?: string;
+  method?: string;
+  notes?: string[];
+}
+
+export interface SurgeRequestsData {
+  requests: SurgeRequest[];
+}
+
+export interface SurgePolicy {
+  name: string;
+  type: string;
+  lineHash: string;
+}
+
+export interface SurgePolicyGroup {
+  name: string;
+  type: string;
+  lineHash: string;
+  policy: string;
+  policies: string[];
+  icon?: string;
+}
+
+export interface SurgePoliciesData {
+  proxies: SurgePolicy[];
+  groups: SurgePolicyGroup[];
+}
+
+// Surge Rules API Response
+export interface SurgeRuleItem {
+  type: string;
+  payload: string;
+  policy: string;
+  raw: string;
+}
+
+export interface SurgeRulesData {
+  rules: SurgeRuleItem[];
+  availablePolicies: string[];
+}
+
+// Backend Type
+export type BackendType = 'clash' | 'surge';
+
+// Gateway utilities
+export * from './gateway-utils.js';

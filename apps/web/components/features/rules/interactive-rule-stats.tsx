@@ -136,6 +136,28 @@ function renderCustomBarLabel(props: any) {
   );
 }
 
+// Hook to detect container width for responsive chart items
+function useContainerWidth(ref: React.RefObject<HTMLElement | null>) {
+  const [width, setWidth] = useState(0);
+  
+  useEffect(() => {
+    if (!ref.current) return;
+    
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setWidth(entry.contentRect.width);
+      }
+    });
+    
+    observer.observe(ref.current);
+    setWidth(ref.current.getBoundingClientRect().width);
+    
+    return () => observer.disconnect();
+  }, [ref]);
+  
+  return width;
+}
+
 export function InteractiveRuleStats({
   data,
   activeBackendId,
@@ -170,6 +192,11 @@ export function InteractiveRuleStats({
   const [ipPage, setIpPage] = useState(1);
   const [ipSearch, setIpSearch] = useState("");
   const [showDomainBarLabels, setShowDomainBarLabels] = useState(true);
+  
+  // Ref for TOP DOMAINS card to detect container width
+  const topDomainsCardRef = useRef<HTMLDivElement>(null);
+  const topDomainsWidth = useContainerWidth(topDomainsCardRef);
+  const topDomainsItemCount = topDomainsWidth >= 500 ? 15 : 10;
 
   // Fetch Gateway rules to find zero-traffic rules.
   const { data: gatewayRules = null } = useGatewayRules({
@@ -200,10 +227,14 @@ export function InteractiveRuleStats({
 
   const chartData = useMemo<RuleChartItem[]>(() => {
     if (!rulesData) return [];
-    const existingRuleNames = new Set(rulesData.map(r => r.rule));
+    
+    // Normalize rule names for deduplication (trim whitespace)
+    const normalizeRuleName = (name: string) => name?.trim() || '';
+    
+    const existingRuleNames = new Set(rulesData.map(r => normalizeRuleName(r.rule)));
     const trafficItems: RuleChartItem[] = rulesData.map((rule, index) => ({
-      name: rule.rule,
-      rawName: rule.rule,
+      name: normalizeRuleName(rule.rule),
+      rawName: normalizeRuleName(rule.rule),
       value: rule.totalDownload + rule.totalUpload,
       download: rule.totalDownload,
       upload: rule.totalUpload,
@@ -221,7 +252,17 @@ export function InteractiveRuleStats({
     if (gatewayRules?.rules) {
       const zeroTrafficItems: typeof trafficItems = [];
       for (const rule of gatewayRules.rules) {
-        const proxyGroup = rule.proxy;
+        // Filter out internal/system rules that users typically don't configure manually or don't want to see
+        // - 'GeoIP': Built-in country rules
+        // - 'RuleSet': Surge's internal expansion of rulesets
+        // - Empty payload: Invalid/Internal
+        if (!rule.payload) continue;
+        if (['GeoIP', 'RuleSet'].includes(rule.type)) continue;
+
+        const proxyGroup = normalizeRuleName(rule.proxy);
+        // Skip empty proxy names
+        if (!proxyGroup) continue;
+        // Skip if already exists (case-sensitive for emoji names)
         if (existingRuleNames.has(proxyGroup)) continue;
         existingRuleNames.add(proxyGroup);
         zeroTrafficItems.push({
@@ -255,6 +296,11 @@ export function InteractiveRuleStats({
   const maxTotal = useMemo(() => {
     if (!chartData.length) return 1;
     return Math.max(...chartData.map(r => r.value));
+  }, [chartData]);
+
+  // Compute set of visible rule names for filtering the graph
+  const visibleRuleNames = useMemo(() => {
+    return new Set(chartData.map(item => item.rawName));
   }, [chartData]);
 
   // Domain sort handler
@@ -505,10 +551,13 @@ export function InteractiveRuleStats({
   // Chart data
   const domainChartData = useMemo<RuleDomainChartItem[]>(() => {
     if (!ruleDomains?.length) return [];
+    // Show more items in wide container (single column layout)
+    const itemCount = topDomainsWidth >= 500 ? 15 : 10;
+    const maxNameLength = topDomainsWidth >= 500 ? 35 : 15;
     return ruleDomains
-      .slice(0, 10)
+      .slice(0, itemCount)
       .map((domain, index) => ({
-        name: domain.domain.length > 15 ? domain.domain.slice(0, 15) + "..." : domain.domain,
+        name: domain.domain.length > maxNameLength ? domain.domain.slice(0, maxNameLength - 3) + "..." : domain.domain,
         fullDomain: domain.domain,
         total: domain.totalDownload + domain.totalUpload,
         download: domain.totalDownload,
@@ -516,7 +565,7 @@ export function InteractiveRuleStats({
         connections: domain.totalConnections,
         color: CHART_COLORS[index % CHART_COLORS.length],
       }));
-  }, [ruleDomains]);
+  }, [ruleDomains, topDomainsWidth]);
 
   const isBackendUnavailable = backendStatus === "unhealthy";
   const emptyHint = isBackendUnavailable
@@ -579,9 +628,9 @@ export function InteractiveRuleStats({
   return (
     <div className="space-y-6">
       {/* Top Section: Three Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-12 gap-6">
-        {/* Left: Pie Chart (3 columns) */}
-        <Card className="min-w-0 lg:col-span-1 2xl:col-span-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-6">
+        {/* Left: Pie Chart */}
+        <Card className="min-w-0">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
               {t("distribution")}
@@ -665,8 +714,8 @@ export function InteractiveRuleStats({
           </CardContent>
         </Card>
 
-        {/* Middle: Rule List (4 columns) */}
-        <Card className="min-w-0 lg:col-span-1 2xl:col-span-4">
+        {/* Middle: Rule List */}
+        <Card className="min-w-0">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
               {t("ruleList")}
@@ -697,61 +746,127 @@ export function InteractiveRuleStats({
                     key={item.rawName}
                     onClick={() => !noTraffic && handleRuleClick(item.rawName)}
                     className={cn(
-                      "w-full p-2.5 rounded-xl border text-left transition-all duration-200",
+                      "w-full p-2.5 rounded-xl border text-left transition-all duration-200 @container",
                       noTraffic
                         ? "border-border/30 bg-card/30 opacity-50 cursor-default"
                         : isSelected
                         ? "border-primary bg-primary/5 ring-1 ring-primary/20"
                         : "border-border/50 bg-card/50 hover:bg-card hover:border-primary/30"
                     )}>
-                    {/* Row 1: Rank + Name + Total */}
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <span className={cn(
-                        "w-5 h-5 rounded-md text-[10px] font-bold flex items-center justify-center shrink-0",
-                        badgeColor
-                      )}>
-                        {noTraffic ? "–" : item.rank + 1}
-                      </span>
+                    {/* Layout for wide container (default) */}
+                    <div className="hidden @min-[200px]:block">
+                      {/* Row 1: Rank + Name + Total */}
+                      <div className="flex items-center gap-2 mb-1.5 min-w-0">
+                        <span className={cn(
+                          "w-5 h-5 rounded-md text-[10px] font-bold flex items-center justify-center shrink-0",
+                          badgeColor
+                        )}>
+                          {noTraffic ? "–" : item.rank + 1}
+                        </span>
 
-                      <span className="flex-1 text-sm font-medium truncate" title={item.name}>
-                        {item.name.length > 24 ? item.name.slice(0, 24) + "..." : item.name}
-                      </span>
+                        <span 
+                          className="flex-1 text-sm font-medium truncate min-w-0" 
+                          title={item.name}
+                        >
+                          {item.name}
+                        </span>
 
-                      <span className="text-sm font-bold tabular-nums shrink-0 whitespace-nowrap">
-                        {noTraffic ? (
-                          <span className="text-xs font-normal text-muted-foreground">{t("noTrafficRecord")}</span>
-                        ) : formatBytes(item.value)}
-                      </span>
-                    </div>
-
-                    {/* Row 2: Progress bar + Stats (hidden for zero-traffic) */}
-                    {!noTraffic && (
-                    <div className="pl-7 space-y-1">
-                      {/* Progress bar - dual color */}
-                      <div className="h-1.5 rounded-full bg-muted overflow-hidden flex">
-                        <div
-                          className="h-full bg-blue-500 dark:bg-blue-400"
-                          style={{ width: `${item.value > 0 ? (item.download / item.value) * barPercent : 0}%` }}
-                        />
-                        <div
-                          className="h-full bg-purple-500 dark:bg-purple-400"
-                          style={{ width: `${item.value > 0 ? (item.upload / item.value) * barPercent : 0}%` }}
-                        />
+                        <span className="text-sm font-bold tabular-nums shrink-0 whitespace-nowrap ml-auto">
+                          {noTraffic ? (
+                            <span className="text-xs font-normal text-muted-foreground">{t("noTrafficRecord")}</span>
+                          ) : formatBytes(item.value)}
+                        </span>
                       </div>
-                      {/* Stats */}
-                      <div className="grid grid-cols-1 min-[300px]:grid-cols-[1fr_auto] gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                          <span className="text-blue-500 dark:text-blue-400 whitespace-nowrap">↓ {formatBytes(item.download)}</span>
-                          <span className="text-purple-500 dark:text-blue-400 whitespace-nowrap">↑ {formatBytes(item.upload)}</span>
-                          <span className="flex items-center gap-1 tabular-nums">
-                            <Link2 className="w-3 h-3" />
-                            {formatNumber(item.connections)}
-                          </span>
+
+                      {/* Row 2: Progress bar + Stats (hidden for zero-traffic) */}
+                      {!noTraffic && (
+                      <div className="pl-7 space-y-1">
+                        {/* Progress bar - dual color */}
+                        <div className="h-1.5 rounded-full bg-muted overflow-hidden flex">
+                          <div
+                            className="h-full bg-blue-500 dark:bg-blue-400"
+                            style={{ width: `${item.value > 0 ? (item.download / item.value) * barPercent : 0}%` }}
+                          />
+                          <div
+                            className="h-full bg-purple-500 dark:bg-purple-400"
+                            style={{ width: `${item.value > 0 ? (item.upload / item.value) * barPercent : 0}%` }}
+                          />
                         </div>
-                        <span className="tabular-nums text-right min-[300px]:text-right">{percentage.toFixed(1)}%</span>
+                        {/* Stats */}
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                            <span className="text-blue-500 dark:text-blue-400 whitespace-nowrap">↓ {formatBytes(item.download)}</span>
+                            <span className="text-purple-500 dark:text-blue-400 whitespace-nowrap">↑ {formatBytes(item.upload)}</span>
+                            <span className="flex items-center gap-1 tabular-nums">
+                              <Link2 className="w-3 h-3" />
+                              {formatNumber(item.connections)}
+                            </span>
+                          </div>
+                          <span className="tabular-nums">{percentage.toFixed(1)}%</span>
+                        </div>
                       </div>
+                      )}
                     </div>
-                    )}
+
+                    {/* Layout for narrow container (vertical stack) */}
+                    <div className="block @min-[200px]:hidden space-y-2">
+                      {/* Row 1: Rank + Name */}
+                      <div className="flex items-center gap-2">
+                        <span className={cn(
+                          "w-5 h-5 rounded-md text-[10px] font-bold flex items-center justify-center shrink-0",
+                          badgeColor
+                        )}>
+                          {noTraffic ? "–" : item.rank + 1}
+                        </span>
+                        <span className="flex-1 text-sm font-medium line-clamp-2 leading-tight" title={item.name}>
+                          {item.name}
+                        </span>
+                      </div>
+                      
+                      {/* Row 2: Stats Grid (hidden for zero-traffic) */}
+                      {!noTraffic && (
+                      <div className="pl-7 space-y-2">
+                        {/* Total Traffic */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-muted-foreground">{t("total")}</span>
+                          <span className="text-sm font-bold tabular-nums">{formatBytes(item.value)}</span>
+                        </div>
+                        
+                        {/* Progress bar */}
+                        <div className="h-1.5 rounded-full bg-muted overflow-hidden flex">
+                          <div
+                            className="h-full bg-blue-500 dark:bg-blue-400"
+                            style={{ width: `${item.value > 0 ? (item.download / item.value) * 100 : 0}%` }}
+                          />
+                          <div
+                            className="h-full bg-purple-500 dark:bg-purple-400"
+                            style={{ width: `${item.value > 0 ? (item.upload / item.value) * 100 : 0}%` }}
+                          />
+                        </div>
+                        
+                        {/* Download / Upload / Connections */}
+                        <div className="grid grid-cols-3 gap-1 text-xs">
+                          <div className="text-center p-1 rounded bg-blue-50 dark:bg-blue-950/30">
+                            <div className="text-blue-500 dark:text-blue-400 mb-0.5">↓</div>
+                            <div className="font-medium tabular-nums truncate">{formatBytes(item.download)}</div>
+                          </div>
+                          <div className="text-center p-1 rounded bg-purple-50 dark:bg-purple-950/30">
+                            <div className="text-purple-500 dark:text-purple-400 mb-0.5">↑</div>
+                            <div className="font-medium tabular-nums truncate">{formatBytes(item.upload)}</div>
+                          </div>
+                          <div className="text-center p-1 rounded bg-muted/50">
+                            <div className="text-muted-foreground mb-0.5"><Link2 className="w-3 h-3 mx-auto" /></div>
+                            <div className="font-medium tabular-nums">{formatNumber(item.connections)}</div>
+                          </div>
+                        </div>
+                      </div>
+                      )}
+                      
+                      {/* Zero traffic message */}
+                      {noTraffic && (
+                        <div className="pl-7 text-xs text-muted-foreground">{t("noTrafficRecord")}</div>
+                      )}
+                    </div>
                   </button>
                 );
               })}
@@ -760,8 +875,9 @@ export function InteractiveRuleStats({
           </CardContent>
         </Card>
 
-        {/* Right: Top Domains Chart (5 columns) */}
-        <Card className="min-w-0 lg:col-span-2 2xl:col-span-5">
+        {/* Right: Top Domains Chart - Full width on single column, adapts to container */}
+        <div ref={topDomainsCardRef} className="min-w-0 md:col-span-2 xl:col-span-1">
+        <Card className="min-w-0 @container h-full">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
@@ -785,12 +901,12 @@ export function InteractiveRuleStats({
                 <p className="text-xs text-muted-foreground/80 mt-1 max-w-xs">{emptyHint}</p>
               </div>
             ) : (
-              <div className="h-[280px] w-full min-w-0 overflow-hidden sm:overflow-visible">
+              <div className="h-[280px] @min-[500px]:h-[360px] w-full min-w-0 overflow-hidden sm:overflow-visible">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={domainChartData}
                     layout="vertical"
-                    margin={{ top: 5, right: showDomainBarLabels ? 50 : 10, left: 5, bottom: 5 }}
+                    margin={{ top: 5, right: showDomainBarLabels ? 60 : 10, left: 0, bottom: 5 }}
                   >
                     <CartesianGrid 
                       strokeDasharray="3 3" 
@@ -806,13 +922,13 @@ export function InteractiveRuleStats({
                       axisLine={false}
                     />
                     <YAxis
-                type="category"
-                dataKey="name"
-                width={90}
-                tick={{ fontSize: 10, fill: "currentColor" }}
-                tickLine={false}
-                axisLine={false}
-              />
+                      type="category"
+                      dataKey="name"
+                      width={120}
+                      tick={{ fontSize: 10, fill: "currentColor" }}
+                      tickLine={false}
+                      axisLine={false}
+                    />
                     <RechartsTooltip 
                       content={({ active, payload }) => {
                         if (active && payload && payload.length) {
@@ -873,6 +989,7 @@ export function InteractiveRuleStats({
             )}
           </CardContent>
         </Card>
+        </div>
       </div>
 
       {/* Unified Chain Flow Visualization - shows all rules, highlights selected */}
@@ -881,6 +998,7 @@ export function InteractiveRuleStats({
         activeBackendId={activeBackendId}
         timeRange={stableTimeRange}
         autoRefresh={autoRefresh}
+        visibleRuleNames={visibleRuleNames}
       />
 
       {/* Bottom Section: Domain List & IP Addresses with pagination */}

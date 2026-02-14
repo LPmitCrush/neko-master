@@ -225,7 +225,7 @@ export function InteractiveDeviceStats({
                         <span className={cn("w-5 h-5 rounded-md text-[10px] font-bold flex items-center justify-center shrink-0", rankBadgeClass)}>
                           {idx + 1}
                         </span>
-                        <div className="px-1.5 py-0.5 rounded-md text-[10px] font-medium text-white/90 truncate min-w-0 max-w-full flex items-center gap-1" style={{ backgroundColor: item.color }}>
+                        <div className="px-1.5 py-0.5 rounded-md text-[10px] font-medium text-white/90 truncate min-w-0 max-w-[140px] flex items-center gap-1" style={{ backgroundColor: item.color }}>
                           <span className="truncate">{item.name}</span>
                         </div>
                       </div>
@@ -250,10 +250,10 @@ export function InteractiveDeviceStats({
                   const badgeColor = item.rank === 0 ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" : item.rank === 1 ? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" : item.rank === 2 ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400" : "bg-muted text-muted-foreground";
                   return (
                     <button key={item.rawName} onClick={() => handleDeviceClick(item.rawName)} className={cn("w-full p-2.5 rounded-xl border text-left transition-all duration-200", isSelected ? "border-primary bg-primary/5 ring-1 ring-primary/20" : "border-border/50 bg-card/50 hover:bg-card hover:border-primary/30")}>
-                      <div className="flex items-center gap-2 mb-1.5">
+                      <div className="flex items-center gap-2 mb-1.5 min-w-0">
                         <span className={cn("w-5 h-5 rounded-md text-[10px] font-bold flex items-center justify-center shrink-0", badgeColor)}>{item.rank + 1}</span>
-                        <span className="flex-1 text-sm font-medium truncate" title={item.name}>{item.name}</span>
-                        <span className="text-sm font-bold tabular-nums shrink-0 whitespace-nowrap">{formatBytes(item.value)}</span>
+                        <span className="flex-1 text-sm font-medium truncate min-w-0 max-w-[120px] sm:max-w-[180px]" title={item.name}>{item.name}</span>
+                        <span className="text-sm font-bold tabular-nums shrink-0 whitespace-nowrap ml-auto">{formatBytes(item.value)}</span>
                       </div>
                       <div className="pl-7 space-y-1">
                         <div className="h-1.5 rounded-full bg-muted overflow-hidden flex">

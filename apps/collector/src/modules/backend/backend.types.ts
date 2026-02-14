@@ -7,6 +7,7 @@ export interface BackendConfig {
   name: string;
   url: string;
   token: string;
+  type: 'clash' | 'surge';
   enabled: boolean;
   is_active: boolean;
   listening: boolean;
@@ -21,31 +22,43 @@ export interface CreateBackendInput {
   name: string;
   url: string;
   token?: string;
+  type?: 'clash' | 'surge';
 }
 
 export interface UpdateBackendInput {
   name?: string;
   url?: string;
   token?: string;
+  type?: 'clash' | 'surge';
   enabled?: boolean;
   listening?: boolean;
+}
+
+export interface BackendHealthInfo {
+  status: 'healthy' | 'unhealthy' | 'unknown';
+  lastChecked: number;
+  message?: string;
+  latency?: number;
 }
 
 export interface BackendResponse {
   id: number;
   name: string;
   url: string;
+  type: 'clash' | 'surge';
   enabled: boolean;
   is_active: boolean;
   listening: boolean;
   created_at: string;
   updated_at: string;
   hasToken: boolean;
+  health?: BackendHealthInfo;
 }
 
 export interface TestConnectionInput {
   url: string;
   token?: string;
+  type?: 'clash' | 'surge';
 }
 
 export interface TestConnectionResult {

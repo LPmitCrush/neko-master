@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { BarChart3, Link2, Waypoints } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
@@ -68,6 +68,28 @@ function renderCustomBarLabel(props: any) {
   );
 }
 
+// Hook to detect container width for responsive chart items
+function useContainerWidth(ref: React.RefObject<HTMLElement | null>) {
+  const [width, setWidth] = useState(0);
+  
+  useEffect(() => {
+    if (!ref.current) return;
+    
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setWidth(entry.contentRect.width);
+      }
+    });
+    
+    observer.observe(ref.current);
+    setWidth(ref.current.getBoundingClientRect().width);
+    
+    return () => observer.disconnect();
+  }, [ref]);
+  
+  return width;
+}
+
 export function InteractiveProxyStats({
   data,
   activeBackendId,
@@ -96,6 +118,10 @@ export function InteractiveProxyStats({
   const [activeTab, setActiveTab] = useState("domains");
   const [detailPageSize, setDetailPageSize] = useState<PageSize>(10);
   const [showDomainBarLabels, setShowDomainBarLabels] = useState(true);
+  
+  // Ref for TOP DOMAINS card to detect container width
+  const topDomainsCardRef = useRef<HTMLDivElement>(null);
+  const topDomainsWidth = useContainerWidth(topDomainsCardRef);
 
   useEffect(() => {
     const media = window.matchMedia("(min-width: 640px)");
@@ -191,11 +217,14 @@ export function InteractiveProxyStats({
   const selectedProxyData = useMemo(() => chartData.find(d => d.rawName === selectedProxy), [chartData, selectedProxy]);
 
   const domainChartData = useMemo(() => {
+    // Show more items in wide container (single column layout)
+    const itemCount = topDomainsWidth >= 500 ? 15 : 10;
+    const maxNameLength = topDomainsWidth >= 500 ? 35 : 25;
     return [...proxyDomains]
       .sort((a, b) => (b.totalDownload + b.totalUpload) - (a.totalDownload + a.totalUpload))
-      .slice(0, 10)
+      .slice(0, itemCount)
       .map((d, i) => ({
-        name: d.domain.length > 25 ? d.domain.slice(0, 22) + "..." : d.domain,
+        name: d.domain.length > maxNameLength ? d.domain.slice(0, maxNameLength - 3) + "..." : d.domain,
         fullName: d.domain,
         total: d.totalDownload + d.totalUpload,
         download: d.totalDownload,
@@ -203,7 +232,7 @@ export function InteractiveProxyStats({
         connections: d.totalConnections,
         color: COLORS[i % COLORS.length],
       }));
-  }, [proxyDomains]);
+  }, [proxyDomains, topDomainsWidth]);
 
   const isBackendUnavailable = backendStatus === "unhealthy";
   const emptyHint = isBackendUnavailable
@@ -236,9 +265,9 @@ export function InteractiveProxyStats({
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-6">
         {/* Pie Chart */}
-        <Card className="min-w-0 lg:col-span-1 2xl:col-span-3">
+        <Card className="min-w-0">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">{t("title")}</CardTitle>
           </CardHeader>
@@ -290,7 +319,7 @@ export function InteractiveProxyStats({
         </Card>
 
         {/* Proxy List */}
-        <Card className="min-w-0 lg:col-span-1 2xl:col-span-4">
+        <Card className="min-w-0">
           <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">{t("title")}</CardTitle></CardHeader>
           <CardContent className="p-3">
             <ScrollArea className="h-[280px] pr-3">
@@ -332,8 +361,9 @@ export function InteractiveProxyStats({
           </CardContent>
         </Card>
 
-        {/* Top Domains Chart */}
-        <Card className="min-w-0 lg:col-span-2 2xl:col-span-5">
+        {/* Top Domains Chart - Full width on single column, adapts to container */}
+        <div className="min-w-0 md:col-span-2 xl:col-span-1 @container">
+        <Card className="min-w-0 h-full">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2"><BarChart3 className="h-4 w-4" />{domainsT("title")}</CardTitle>
@@ -354,11 +384,11 @@ export function InteractiveProxyStats({
                 <p className="text-xs text-muted-foreground/80 mt-1 max-w-xs">{emptyHint}</p>
               </div>
             ) : (
-              <div className="h-[280px] w-full">
+              <div className="h-[280px] @min-[500px]:h-[320px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={domainChartData} layout="vertical" margin={{ left: 0, right: showDomainBarLabels ? 60 : 10, top: 5, bottom: 5 }}>
+                  <BarChart data={domainChartData} layout="vertical" margin={{ left: 0, right: showDomainBarLabels ? 70 : 10, top: 5, bottom: 5 }}>
                     <XAxis type="number" hide />
-                    <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+                    <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
                     <RechartsTooltip content={({ active, payload }) => {
                       if (active && payload && payload.length) {
                         const item = payload[0].payload;
@@ -376,6 +406,7 @@ export function InteractiveProxyStats({
             )}
           </CardContent>
         </Card>
+        </div>
       </div>
 
       {/* Bottom: Tabs with shared table components */}

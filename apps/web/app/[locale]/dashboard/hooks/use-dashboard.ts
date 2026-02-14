@@ -23,6 +23,7 @@ import {
 import { useStableTimeRange } from "@/lib/hooks/use-stable-time-range";
 import { useStatsWebSocket } from "@/lib/websocket";
 import { useRequireAuth } from "@/lib/auth";
+import { toast } from "sonner";
 import type {
   StatsSummary,
   CountryStats,
@@ -279,11 +280,23 @@ export function useDashboard(): UseDashboardReturn {
         await api.setActiveBackend(backendId);
         await backendsQuery.refetch();
         await refreshNow(true);
+        
+        // Check backend health after switching
+        const switchedBackend = backends.find(b => b.id === backendId);
+        if (switchedBackend?.health?.status === 'unhealthy') {
+          toast.warning(
+            dashboardT("backendUnhealthyTitle"), 
+            {
+              description: switchedBackend.health.message || dashboardT("backendUnhealthyDesc"),
+              duration: 5000,
+            }
+          );
+        }
       } catch (err) {
         console.error("Failed to switch backend:", err);
       }
     },
-    [backendsQuery.refetch, refreshNow]
+    [backendsQuery.refetch, refreshNow, backends, backendT]
   );
 
   const handleBackendChange = useCallback(async () => {

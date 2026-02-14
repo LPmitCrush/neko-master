@@ -110,15 +110,24 @@ export interface TimeRange {
   end: string;
 }
 
+export interface BackendHealth {
+  status: 'healthy' | 'unhealthy' | 'unknown';
+  lastChecked: number;
+  message?: string;
+  latency?: number;
+}
+
 export interface Backend {
   id: number;
   name: string;
   url: string;
   token: string;
+  type?: 'clash' | 'surge';
   enabled: boolean;
   is_active: boolean;
   listening: boolean;
   hasToken?: boolean;
+  health?: BackendHealth;
   created_at: string;
   updated_at: string;
 }
@@ -139,6 +148,10 @@ export interface GatewayProvider {
   proxies: GatewayProviderProxy[];
 }
 
+export interface GatewayProxiesResponse {
+  proxies: Record<string, GatewayProviderProxy>;
+}
+
 export interface GatewayProvidersResponse {
   providers: Record<string, GatewayProvider>;
 }
@@ -147,10 +160,15 @@ export interface GatewayRule {
   type: string;
   payload: string;
   proxy: string;
+  size?: number;
+  raw?: string;
 }
 
 export interface GatewayRulesResponse {
   rules: GatewayRule[];
+  // Surge specific fields
+  _source?: 'surge' | 'clash';
+  _availablePolicies?: string[];
 }
 
 const DEFAULT_DB_STATS = {
@@ -473,15 +491,18 @@ export const api = {
 
   getGatewayRules: (backendId?: number) =>
     fetchJson<GatewayRulesResponse>(buildUrl(`${API_BASE}/gateway/rules`, { backendId })),
+
+  getGatewayProxies: (backendId?: number) =>
+    fetchJson<GatewayProxiesResponse>(buildUrl(`${API_BASE}/gateway/proxies`, { backendId })),
     
   // Backend management
   getBackends: () =>
     fetchJson<Backend[]>(`${API_BASE}/backends`),
     
-  createBackend: (backend: { name: string; url: string; token?: string }) =>
+  createBackend: (backend: { name: string; url: string; token?: string; type?: 'clash' | 'surge' }) =>
     fetchJson<{ id: number; isActive?: boolean; message: string }>(`${API_BASE}/backends`, 'POST', backend),
     
-  updateBackend: (id: number, backend: { name?: string; url?: string; token?: string; enabled?: boolean; listening?: boolean }) =>
+  updateBackend: (id: number, backend: { name?: string; url?: string; token?: string; type?: 'clash' | 'surge'; enabled?: boolean; listening?: boolean }) =>
     fetchJson<{ message: string }>(`${API_BASE}/backends/${id}`, 'PUT', backend),
     
   deleteBackend: (id: number) =>
@@ -496,8 +517,8 @@ export const api = {
   clearBackendData: (id: number) =>
     fetchJson<{ message: string }>(`${API_BASE}/backends/${id}/clear-data`, 'POST'),
     
-  testBackend: (url: string, token?: string) =>
-    fetchJson<{ success: boolean; message: string }>(`${API_BASE}/backends/test`, 'POST', { url, token }),
+  testBackend: (url: string, token?: string, type?: 'clash' | 'surge') =>
+    fetchJson<{ success: boolean; message: string }>(`${API_BASE}/backends/test`, 'POST', { url, token, type }),
 
   testBackendById: (id: number) =>
     fetchJson<{ success: boolean; message: string }>(`${API_BASE}/backends/${id}/test`, 'POST'),

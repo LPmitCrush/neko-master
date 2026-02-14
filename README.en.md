@@ -190,10 +190,13 @@ Open <http://localhost:3000> to configure.
 
 ![First Use](./assets/neko-master-setup.png)
 
+### Connect Clash / Mihomo
+
 1. Open <http://localhost:3000>
 2. The **Gateway Configuration** dialog will appear on first visit
 3. Fill in your network gateway (e.g., OpenClash) connection info:
    - **Name**: Custom name (e.g., "Home Gateway")
+   - **Type**: Select `Clash / Mihomo`
    - **Host**: Gateway backend address (e.g., `192.168.101.1`)
    - **Port**: Gateway backend port (e.g., `9090`)
    - **Token**: Fill if Secret is configured, otherwise leave empty
@@ -201,6 +204,44 @@ Open <http://localhost:3000> to configure.
 5. The system will automatically start collecting and analyzing traffic data
 
 > 💡 **Get Gateway Address**: Go to your gateway control panel (e.g., OpenClash) → Enable "External Control" → Copy API address
+
+### Connect Surge
+
+![Surge HTTP API Configuration](./assets/neko-master-surge.png)
+
+Neko Master supports connecting to Surge gateways for complete rule chain visualization and traffic analysis.
+
+#### 1. Enable Surge HTTP API
+
+Enable HTTP remote API in your Surge configuration:
+
+```ini
+[General]
+http-api = 127.0.0.1:9091
+http-api-tls = false
+http-api-web-dashboard = true
+```
+
+Or configure via Surge's graphical interface:
+
+- **HTTP Remote API**: `Settings` → `General` → `HTTP Remote API`
+- **Port**: Default `9091`
+- **Authentication**: Recommended to set a password for enhanced security
+
+#### 2. Add Surge Backend in Neko Master
+
+1. Open Neko Master settings dialog
+2. Click "Add Backend"
+3. Fill in the connection info:
+   - **Name**: Custom name (e.g., "Surge Home")
+   - **Type**: Select `Surge`
+   - **Host**: IP address where Surge is running (e.g., `192.168.1.1` or `127.0.0.1`)
+   - **Port**: HTTP API port (default `9091`)
+   - **Token**: HTTP API password (if configured)
+4. Click "Test Connection" to verify the configuration
+5. Save the configuration
+
+> 💡 **Note**: Surge uses HTTP polling to fetch data (compared to Clash's WebSocket real-time stream), with a data refresh delay of approximately 2 seconds.
 
 ## 🔧 Port Conflict Resolution
 

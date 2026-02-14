@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.7] - 2026-02-14
+
+### Added
+
+- **Surge Backend Support** 🚀
+  - Full support for Surge HTTP REST API data collection
+  - Complete rule chain visualization (Rule Chain Flow)
+  - Full feature support including proxy distribution charts and domain statistics
+  - Intelligent policy cache system with background sync
+  - Automatic retry mechanism with exponential backoff for failed API requests
+  - Anti-duplicate protection using `recentlyCompleted` Map to prevent double-counting completed connections
+- **Responsive Layout Improvements**
+  - RULE LIST cards support container queries for adaptive layout switching
+  - TOP DOMAINS cards expand to full width in single-column layout with more data items
+- **UX Improvements**
+  - Added skeleton loading screen for Backends list in Settings dialog
+
+### Fixed
+
+- **Surge collector short-lived connection traffic loss**: Fixed issue where traffic deltas for completed connections (status=Complete) were not being counted; uses `recentlyCompleted` Map to record final traffic and correctly calculate differences
+- **Cleanup timer determinism**: Changed `recentlyCompleted` cleanup from `setInterval` to deterministic triggering tied to the polling cycle
+- Fixed IPv6 validation logic using Node.js native `net.isIPv4/isIPv6`
+
+### Refactored
+
+- **Database Repository Pattern Refactoring** 🏗️
+  - Split the 5400+ line monolithic `db.ts` into 14 independent Repository files
+  - Added `database/repositories/` directory with Repository Pattern architecture
+  - Slimmed `db.ts` down to ~1000 lines, retaining only DDL, migrations, and one-line delegation methods
+  - Extracted Repositories: `base`, `domain`, `ip`, `rule`, `proxy`, `device`, `country`, `timeseries`, `traffic-writer`, `config`, `backend`, `auth`, `surge`
+  - `BaseRepository` encapsulates 13 shared utility methods including `parseMinuteRange`, `expandShortChainsForRules`, etc.
+- **Code cleanup** (~140 lines removed)
+  - Removed unused `parseRule` function, duplicate `buildGatewayHeaders`/`getGatewayBaseUrl`
+  - Cleaned up debug `console.log` statements, unused `sleep()`, `DailyStats` import
+  - Removed unused `EXTENDED_RETENTION`/`MINIMAL_RETENTION` constants
+
+### Technical Details
+
+- Surge collector uses `/v1/policy_groups/select` endpoint for policy group details
+- `BackendRepository` now includes `type: 'clash' | 'surge'` field across create, query, and update flows
+- Cleaned up debug code in `/api/gateway/proxies`
+
 ## [1.2.6] - 2026-02-13
 
 ### Security

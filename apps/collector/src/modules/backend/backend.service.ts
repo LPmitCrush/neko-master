@@ -1,5 +1,6 @@
 /**
  * Backend Service - Business logic for backend management
+ * Includes automatic health checking for upstream gateways
  */
 
 import type { StatsDatabase } from '../../db.js';
@@ -9,6 +10,7 @@ import type {
   CreateBackendInput,
   UpdateBackendInput,
   BackendResponse,
+  BackendHealthInfo,
   TestConnectionInput,
   TestConnectionResult,
   CreateBackendResult,
@@ -33,6 +35,10 @@ function maskUrl(url: string): string {
 }
 
 export class BackendService {
+  private healthStatus = new Map<number, BackendHealthInfo>();
+  private healthCheckInterval: NodeJS.Timeout | null = null;
+  private readonly HEALTH_CHECK_INTERVAL_MS = 30000; // 30 seconds
+
   constructor(
     private db: StatsDatabase,
     private realtimeStore: RealtimeStore,
@@ -40,21 +46,111 @@ export class BackendService {
   ) {}
 
   /**
-   * Get all backends (with token hidden)
+   * Start automatic health checks for all listening backends
+   */
+  startHealthChecks(): void {
+    if (this.healthCheckInterval) return;
+    
+    console.log('[BackendService] Starting automatic health checks');
+    
+    // Run initial check
+    this.runHealthChecks();
+    
+    // Schedule periodic checks
+    this.healthCheckInterval = setInterval(() => {
+      this.runHealthChecks();
+    }, this.HEALTH_CHECK_INTERVAL_MS);
+  }
+
+  /**
+   * Stop automatic health checks
+   */
+  stopHealthChecks(): void {
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
+      console.log('[BackendService] Stopped automatic health checks');
+    }
+  }
+
+  /**
+   * Get health status for a specific backend
+   */
+  getHealthStatus(backendId: number): BackendHealthInfo | undefined {
+    return this.healthStatus.get(backendId);
+  }
+
+  /**
+   * Run health checks for all listening backends
+   */
+  private async runHealthChecks(): Promise<void> {
+    const backends = this.db.getListeningBackends();
+    
+    for (const backend of backends) {
+      try {
+        const startTime = Date.now();
+        const result = await this.testConnection({
+          url: backend.url,
+          token: backend.token,
+          type: backend.type,
+        });
+        const latency = Date.now() - startTime;
+        
+        const health: BackendHealthInfo = {
+          status: result.success ? 'healthy' : 'unhealthy',
+          lastChecked: Date.now(),
+          message: result.message,
+          latency: result.success ? latency : undefined,
+        };
+        
+        // Only log when status changes or on failure
+        const prevHealth = this.healthStatus.get(backend.id);
+        if (!result.success || prevHealth?.status !== health.status) {
+          console.log(`[BackendService] Health check for ${backend.name}: ${health.status}${result.message ? ` - ${result.message}` : ''}`);
+        }
+        
+        this.healthStatus.set(backend.id, health);
+      } catch (error) {
+        const health: BackendHealthInfo = {
+          status: 'unhealthy',
+          lastChecked: Date.now(),
+          message: error instanceof Error ? error.message : 'Health check failed',
+        };
+        this.healthStatus.set(backend.id, health);
+        console.warn(`[BackendService] Health check error for ${backend.name}:`, error);
+      }
+    }
+  }
+
+  /**
+   * Attach health status to backend response
+   */
+  private attachHealthStatus(backend: BackendResponse): BackendResponse {
+    const health = this.healthStatus.get(backend.id);
+    if (health) {
+      return { ...backend, health };
+    }
+    return backend;
+  }
+
+  /**
+   * Get all backends (with token hidden and health status attached)
    */
   getAllBackends(): BackendResponse[] {
     const backends = this.db.getAllBackends();
     const isShowcase = this.authService.isShowcaseMode();
 
-    return backends.map(({ token, ...rest }) => ({
-      ...rest,
-      hasToken: !!token,
-      url: isShowcase ? maskUrl(rest.url) : rest.url,
-    }));
+    return backends.map(({ token, ...rest }) => 
+      this.attachHealthStatus({
+        ...rest,
+        hasToken: !!token,
+        url: isShowcase ? maskUrl(rest.url) : rest.url,
+      })
+    );
   }
 
   /**
-   * Get active backend
+   * Get active backend (with health status attached)
    */
   getActiveBackend(): BackendResponse | { error: string } {
     const backend = this.db.getActiveBackend();
@@ -64,25 +160,27 @@ export class BackendService {
     const { token, ...rest } = backend;
     const isShowcase = this.authService.isShowcaseMode();
 
-    return { 
+    return this.attachHealthStatus({ 
       ...rest, 
       hasToken: !!token,
       url: isShowcase ? maskUrl(rest.url) : rest.url,
-    };
+    });
   }
 
   /**
-   * Get listening backends
+   * Get listening backends (with health status attached)
    */
   getListeningBackends(): BackendResponse[] {
     const backends = this.db.getListeningBackends();
     const isShowcase = this.authService.isShowcaseMode();
 
-    return backends.map(({ token, ...rest }) => ({
-      ...rest,
-      hasToken: !!token,
-      url: isShowcase ? maskUrl(rest.url) : rest.url,
-    }));
+    return backends.map(({ token, ...rest }) => 
+      this.attachHealthStatus({
+        ...rest,
+        hasToken: !!token,
+        url: isShowcase ? maskUrl(rest.url) : rest.url,
+      })
+    );
   }
 
   /**
@@ -105,13 +203,13 @@ export class BackendService {
    * Create a new backend
    */
   createBackend(input: CreateBackendInput): CreateBackendResult {
-    const { name, url, token } = input;
+    const { name, url, token, type = 'clash' } = input;
     
     // Check if this is the first backend
     const existingBackends = this.db.getAllBackends();
     const isFirstBackend = existingBackends.length === 0;
     
-    const id = this.db.createBackend({ name, url, token });
+    const id = this.db.createBackend({ name, url, token, type });
     
     // If this is the first backend, automatically set it as active
     if (isFirstBackend) {
@@ -176,6 +274,7 @@ export class BackendService {
     return this.testConnection({
       url: backend.url,
       token: backend.token,
+      type: backend.type,
     });
   }
 
@@ -183,8 +282,19 @@ export class BackendService {
    * Test connection to a backend
    */
   async testConnection(input: TestConnectionInput): Promise<TestConnectionResult> {
-    const { url, token } = input;
+    const { url, token, type = 'clash' } = input;
     
+    if (type === 'surge') {
+      return this.testSurgeConnection(url, token);
+    }
+    
+    return this.testClashConnection(url, token);
+  }
+
+  /**
+   * Test Clash WebSocket connection
+   */
+  private async testClashConnection(url: string, token?: string): Promise<TestConnectionResult> {
     try {
       const wsUrl = url.replace('http://', 'ws://').replace('https://', 'wss://');
       const fullUrl = wsUrl.includes('/connections') ? wsUrl : `${wsUrl}/connections`;
@@ -194,7 +304,6 @@ export class BackendService {
         headers['Authorization'] = `Bearer ${token}`;
       }
       
-      // Try to establish WebSocket connection
       const WebSocket = (await import('ws')).default;
       
       return new Promise((resolve) => {
@@ -233,6 +342,53 @@ export class BackendService {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Connection failed';
       return { success: false, message };
+    }
+  }
+
+  /**
+   * Test Surge HTTP REST API connection
+   * Uses /v1/environment endpoint for lightweight health check
+   */
+  private async testSurgeConnection(url: string, token?: string): Promise<TestConnectionResult> {
+    try {
+      const baseUrl = url.replace(/\/$/, '');
+      // Use /v1/environment for health check (lightweight, always available)
+      const testUrl = `${baseUrl}/v1/environment`;
+      
+      const headers: Record<string, string> = {
+        Accept: 'application/json',
+      };
+      
+      if (token) {
+        headers['x-key'] = token;
+      }
+      
+      const response = await fetch(testUrl, {
+        headers,
+        signal: AbortSignal.timeout(5000),
+      });
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          return { success: false, message: 'Authentication failed - check your API key' };
+        }
+        return { success: false, message: `HTTP ${response.status}: ${response.statusText}` };
+      }
+
+      const data = await response.json() as Record<string, unknown>;
+      if (data && typeof data === 'object' && data.deviceName) {
+        return { success: true, message: `Connected to Surge (${String(data.deviceName)})` };
+      }
+      
+      return { success: false, message: 'Invalid response format from Surge API' };
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          return { success: false, message: 'Connection timeout - check if Surge HTTP API is enabled' };
+        }
+        return { success: false, message: error.message };
+      }
+      return { success: false, message: 'Connection failed' };
     }
   }
 }

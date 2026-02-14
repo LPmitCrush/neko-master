@@ -2,6 +2,7 @@
 
 import { useTheme } from "next-themes"
 import { Toaster as Sonner } from "sonner"
+import { CheckCircle2, XCircle, AlertTriangle, Info } from "lucide-react"
 
 type ToasterProps = React.ComponentProps<typeof Sonner>
 
@@ -12,6 +13,12 @@ const Toaster = ({ ...props }: ToasterProps) => {
     <Sonner
       theme={theme as ToasterProps["theme"]}
       className="toaster group"
+      icons={{
+        success: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
+        error: <XCircle className="w-4 h-4 text-red-500" />,
+        warning: <AlertTriangle className="w-4 h-4 text-amber-500" />,
+        info: <Info className="w-4 h-4 text-blue-500" />,
+      }}
       toastOptions={{
         classNames: {
           toast:
@@ -21,6 +28,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
             "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",
           cancelButton:
             "group-[.toast]:bg-muted group-[.toaster]:text-muted-foreground",
+          success: "group-[.toaster]:border-emerald-500/30",
+          error: "group-[.toaster]:border-red-500/30",
+          warning: "group-[.toaster]:border-amber-500/30",
         },
       }}
       {...props}

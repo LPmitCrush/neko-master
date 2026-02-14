@@ -38,6 +38,8 @@ import { useStableTimeRange } from "@/lib/hooks/use-stable-time-range";
 import { resolveActiveChains, type ActiveChainInfo } from "@/lib/active-chain";
 import { useTranslations } from "next-intl";
 import type { StatsSummary } from "@neko-master/shared";
+import { useGatewayProviders, useGatewayProxies } from "@/hooks/api/use-gateway";
+import { useGatewayRules } from "@/hooks/api/use-rules";
 
 // ---------- Types ----------
 
@@ -64,6 +66,7 @@ interface UnifiedRuleChainFlowProps {
   activeBackendId?: number;
   timeRange?: TimeRange;
   autoRefresh?: boolean;
+  visibleRuleNames?: Set<string>;
 }
 
 // ---------- Layout constants ----------
@@ -803,6 +806,7 @@ function UnifiedRuleChainFlowInner({
   activeBackendId,
   timeRange,
   autoRefresh = true,
+  visibleRuleNames,
 }: UnifiedRuleChainFlowProps) {
   const t = useTranslations("rules");
   // Round timeRange to the minute so WS/HTTP only re-fires on minute boundaries
@@ -812,8 +816,6 @@ function UnifiedRuleChainFlowInner({
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [activePolicyOnly, setActivePolicyOnly] = useState(false);
-  const [activeChainInfo, setActiveChainInfo] =
-    useState<ActiveChainInfo | null>(null);
   const prevRuleRef = useRef(selectedRule);
   const hasLoadedRef = useRef(false);
   const requestIdRef = useRef(0);
@@ -997,39 +999,29 @@ function UnifiedRuleChainFlowInner({
     }
   }, [activeBackendId, wsEnabled]);
 
-  // Fetch active chain info for zero-traffic chain merge.
-  useEffect(() => {
-    setActiveChainInfo(null);
-    let cancelled = false;
+  // Use React Query to fetch active chain info with caching
+  const { data: gatewayProviders } = useGatewayProviders({ 
+    activeBackendId, 
+    enabled: !!activeBackendId 
+  });
+  const { data: gatewayProxies } = useGatewayProxies({ 
+    activeBackendId, 
+    enabled: !!activeBackendId 
+  });
+  const { data: gatewayRules } = useGatewayRules({ 
+    activeBackendId, 
+    enabled: !!activeBackendId 
+  });
 
-    async function fetchActiveChains() {
-      try {
-        const [gatewayProviders, gatewayRules] = await Promise.all([
-          api.getGatewayProviders(activeBackendId),
-          api.getGatewayRules(activeBackendId),
-        ]);
-
-        if (cancelled) return;
-
-        const resolved = resolveActiveChains(gatewayProviders, gatewayRules);
-        setActiveChainInfo(resolved);
-      } catch {
-        if (!cancelled) setActivePolicyOnly(false);
-      }
+  // Compute active chain info from cached data
+  const activeChainInfo: ActiveChainInfo | null = useMemo(() => {
+    if (!gatewayProviders || !gatewayRules) return null;
+    try {
+      return resolveActiveChains(gatewayProviders, gatewayRules, gatewayProxies || undefined);
+    } catch {
+      return null;
     }
-
-    fetchActiveChains();
-    if (!autoRefresh) {
-      return () => {
-        cancelled = true;
-      };
-    }
-    const interval = setInterval(fetchActiveChains, 60000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [activeBackendId, autoRefresh]);
+  }, [gatewayProviders, gatewayRules, gatewayProxies]);
 
   // When user selects a different rule, auto-disable showAll
   useEffect(() => {
@@ -1042,6 +1034,12 @@ function UnifiedRuleChainFlowInner({
   // Filter/Merge DAG
   const filteredData = useMemo((): AllChainFlowData | null => {
     if (!data) return null;
+    // If activeChainInfo is not loaded yet and we're not showing all policies,
+    // we need to wait for it to properly filter the data.
+    // Return empty data to show loading state instead of unfiltered data.
+    if (!activeChainInfo && !activePolicyOnly) {
+      return { nodes: [], links: [], rulePaths: {}, maxLayer: 0 };
+    }
     if (!activeChainInfo) return data;
 
     const { activeNodeNames, activeLinkKeys, activeChains } = activeChainInfo;
@@ -1052,17 +1050,39 @@ function UnifiedRuleChainFlowInner({
 
     // Determine which existing nodes to keep
     const keepNodeIndices = new Set<number>();
-    if (!activePolicyOnly) {
-      // Keep ALL existing nodes if not filtering
-      data.nodes.forEach((_, i) => keepNodeIndices.add(i));
-    } else {
-      // Keep only active nodes from existing data
-      for (const [, idx] of existingNodeMap) {
-        if (activeNodeNames.has(data.nodes[idx].name)) {
-          keepNodeIndices.add(idx);
-        }
-      }
+    
+    // Helper to check if a node has traffic
+    const nodeHasTraffic = (node: MergedChainNode) => 
+      node.totalUpload > 0 || node.totalDownload > 0 || node.totalConnections > 0;
+
+    // Build a normalized map of rulePaths to handle potential whitespace mismatches
+    // (e.g. Surge rules might have leading/trailing spaces in API vs UI)
+    const normalizedRulePaths = new Map<string, { nodeIndices: number[]; linkIndices: number[] }>();
+    for (const [key, value] of Object.entries(data.rulePaths)) {
+      normalizedRulePaths.set(key.trim(), value);
     }
+
+    data.nodes.forEach((node, idx) => {
+      // 1. If "All Policies" is checked, keep everything
+      if (activePolicyOnly) {
+        keepNodeIndices.add(idx);
+        return;
+      }
+      
+      // 2. If a specific rule is selected, always keep nodes in its path
+      // Use normalized lookup
+      if (selectedRule && normalizedRulePaths.get(selectedRule)?.nodeIndices.includes(idx)) {
+        keepNodeIndices.add(idx);
+        return;
+      }
+      
+      // 3. Otherwise, only keep nodes with active traffic or relevant to active chains
+      if (activeChains.size > 0 && (nodeHasTraffic(node) || activeNodeNames.has(node.name))) {
+         if (nodeHasTraffic(node)) {
+             keepNodeIndices.add(idx);
+         }
+      }
+    });
 
     // Build new nodes array (existing kept + zero-traffic for missing active)
     const newNodes: MergedChainNode[] = [];
@@ -1076,12 +1096,40 @@ function UnifiedRuleChainFlowInner({
     }
 
     // Second: add zero-traffic nodes for active chain members not in existing data
-    for (const [, chain] of activeChains) {
+    // If "All Policies" is ON, we inject nodes for ALL chains.
+    // If a whitelist (visibleRuleNames) is provided, we only show those.
+    // Otherwise, we only inject for the currently selected rule.
+    const chainsToInject = new Set<string>();
+    if (activePolicyOnly) {
+      if (visibleRuleNames && visibleRuleNames.size > 0) {
+        // Only inject chains that are in the user's rule list
+        for (const ruleName of visibleRuleNames) {
+           if (activeChains.has(ruleName)) {
+             chainsToInject.add(ruleName);
+           }
+        }
+      } else {
+        // Fallback: inject everything
+        for (const ruleName of activeChains.keys()) {
+          chainsToInject.add(ruleName);
+        }
+      }
+    } else if (selectedRule && activeChains.has(selectedRule)) {
+      chainsToInject.add(selectedRule);
+    }
+
+    for (const ruleName of chainsToInject) {
+      const chain = activeChains.get(ruleName);
+      if (!chain) continue;
+      
       for (let i = 0; i < chain.length; i++) {
         const name = chain[i];
         if (!nameToNewIdx.has(name)) {
+          // Special built-in policies that are not actual proxies
+          const isBuiltInPolicy = name === 'DIRECT' || name === 'REJECT' || name === 'REJECT-TINY';
+          const isLastNode = i === chain.length - 1;
           const nodeType: "rule" | "group" | "proxy" =
-            i === 0 ? "rule" : i === chain.length - 1 ? "proxy" : "group";
+            i === 0 ? "rule" : (isLastNode && !isBuiltInPolicy) ? "proxy" : "group";
           nameToNewIdx.set(name, newNodes.length);
           newNodes.push({
             name,
@@ -1103,35 +1151,50 @@ function UnifiedRuleChainFlowInner({
     const linkKeySet = new Set<string>();
 
     // Existing links from data (filtered if needed)
-    for (const link of data.links) {
-      const srcName = data.nodes[link.source]?.name;
-      const tgtName = data.nodes[link.target]?.name;
+    data.links.forEach((link, idx) => {
+      const srcNode = data.nodes[link.source];
+      const tgtNode = data.nodes[link.target];
+      if (!srcNode || !tgtNode) return;
       
-      // If filtering, check if link is in active keys. If not filtering, keep it.
-      const shouldKeepLink =
-        !activePolicyOnly ||
-        (srcName && tgtName && activeLinkKeys.has(`${srcName}|${tgtName}`));
+      const newSrc = nameToNewIdx.get(srcNode.name);
+      const newTgt = nameToNewIdx.get(tgtNode.name);
+      
+      // Both endpoints must be in our kept nodes
+      if (newSrc !== undefined && newTgt !== undefined) {
+        // Keep link if "All Policies" OR if it's a Rule->Group link OR generally if endpoints are kept
+        const isRuleLink = srcNode.nodeType === 'rule';
 
-      if (shouldKeepLink && srcName && tgtName) {
-        const newSrc = nameToNewIdx.get(srcName);
-        const newTgt = nameToNewIdx.get(tgtName);
-        // Ensure both endpoints exist in our new node set
-        if (newSrc !== undefined && newTgt !== undefined) {
-          const key = `${newSrc}-${newTgt}`;
-          if (!linkKeySet.has(key)) {
-            linkKeySet.add(key);
-            newLinks.push({
-              source: newSrc,
-              target: newTgt,
-              rules: link.rules,
-            });
-          }
+        // Check if the server-side analysis knows this link for the selected rule
+        // This is crucial for Surge backend where client-side chain resolution might miss some links
+        // Use normalized lookup here too
+        const isServerKnownLink = selectedRule && 
+          normalizedRulePaths.get(selectedRule)?.linkIndices?.includes(idx);
+        
+        const shouldKeepLink = 
+             activePolicyOnly || 
+             isRuleLink || 
+             isServerKnownLink ||
+             activeLinkKeys.has(`${srcNode.name}|${tgtNode.name}`);
+
+        if (shouldKeepLink) {
+             const key = `${newSrc}-${newTgt}`;
+             if (!linkKeySet.has(key)) {
+               linkKeySet.add(key);
+               newLinks.push({
+                 source: newSrc,
+                 target: newTgt,
+                 rules: link.rules,
+               });
+             }
         }
       }
-    }
+    });
 
     // Zero-traffic links for active chains not yet covered
-    for (const [, chain] of activeChains) {
+    for (const ruleName of chainsToInject) {
+      const chain = activeChains.get(ruleName);
+      if (!chain) continue;
+
       for (let i = 0; i < chain.length - 1; i++) {
         const srcIdx = nameToNewIdx.get(chain[i]);
         const tgtIdx = nameToNewIdx.get(chain[i + 1]);
@@ -1150,31 +1213,53 @@ function UnifiedRuleChainFlowInner({
       string,
       { nodeIndices: number[]; linkIndices: number[] }
     > = {};
+    
+    // We try to rebuild paths for all active chains that have nodes present
     for (const [ruleName, chain] of activeChains) {
       const nodeIndices: number[] = [];
       const linkIndices: number[] = [];
+      
+      // Nodes
       for (const name of chain) {
         const idx = nameToNewIdx.get(name);
         if (idx !== undefined) nodeIndices.push(idx);
       }
-      // Find link indices
+      
+      // Links
       for (let i = 0; i < chain.length - 1; i++) {
         const srcIdx = nameToNewIdx.get(chain[i]);
         const tgtIdx = nameToNewIdx.get(chain[i + 1]);
         if (srcIdx !== undefined && tgtIdx !== undefined) {
-          const linkIdx = newLinks.findIndex(
-            (l) => l.source === srcIdx && l.target === tgtIdx,
-          );
-          if (linkIdx !== -1) linkIndices.push(linkIdx);
+           // Locate link in newLinks
+           const linkIdx = newLinks.findIndex(l => l.source === srcIdx && l.target === tgtIdx);
+           if (linkIdx !== -1) linkIndices.push(linkIdx);
         }
       }
+      
       if (nodeIndices.length > 0) {
         newRulePaths[ruleName] = { nodeIndices, linkIndices };
       }
     }
 
     // Compute maxLayer
-    const maxLayer = newNodes.reduce((max, n) => Math.max(max, n.layer), 0);
+    // const maxLayer = newNodes.reduce((max, n) => Math.max(max, n.layer), 0);
+
+    // [New Logic]
+    // To align usage with user request: "Right-align all PROXY nodes".
+    // 1. Find the deepest layer among all nodes (or specifically rule/group nodes which define the structure).
+    let maxLayer = 0;
+    for (const n of newNodes) {
+        if (n.layer > maxLayer) maxLayer = n.layer;
+    }
+    // Ensure minimum depth to separate Rule -> Proxy
+    if (maxLayer < 2) maxLayer = 2; // At least Rule(0) -> Gap(1) -> Proxy(2)
+
+    // 2. Force all "proxy" nodes to be at maxLayer
+    for (const n of newNodes) {
+        if (n.nodeType === 'proxy') {
+            n.layer = maxLayer;
+        }
+    }
 
     return {
       nodes: newNodes,
@@ -1182,7 +1267,7 @@ function UnifiedRuleChainFlowInner({
       rulePaths: newRulePaths,
       maxLayer,
     };
-  }, [data, activePolicyOnly, activeChainInfo]);
+  }, [data, activePolicyOnly, activeChainInfo, selectedRule, visibleRuleNames]);
 
   const renderData = filteredData;
 

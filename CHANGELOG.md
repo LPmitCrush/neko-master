@@ -7,6 +7,48 @@
 
 ## [未发布]
 
+## [1.2.7] - 2026-02-14
+
+### 新增
+
+- **Surge 后端支持** 🚀
+  - 完全支持 Surge HTTP REST API 数据采集
+  - 支持规则链可视化展示（Rule Chain Flow）
+  - 支持代理节点分布图、域名统计等完整功能
+  - 智能策略缓存系统，后台同步 Surge 策略配置
+  - 自动重试机制：API 请求失败时采用指数退避策略
+  - 反重复计算保护：通过 `recentlyCompleted` Map 防止已完成连接被重复计算
+- **响应式布局优化**
+  - RULE LIST 卡片支持容器查询自适应，狭窄空间自动切换垂直布局
+  - TOP DOMAINS 卡片在单列布局时自动撑满宽度并显示更多数据
+- **用户体验改进**
+  - Settings 对话框新增 Backends 列表骨架屏，解决首次加载白屏问题
+
+### 修复
+
+- **Surge 采集器短连接流量丢失**：修复已完成连接（status=Complete）的流量增量未被计入的问题，通过 `recentlyCompleted` Map 记录最终流量并正确计算差值
+- **清理定时器确定性**：将 `recentlyCompleted` 的清理从 `setInterval` 改为与轮询周期绑定的确定性触发
+- 修复 IPv6 验证逻辑，使用 Node.js 内置 `net.isIPv4/isIPv6`
+
+### 重构
+
+- **数据库 Repository 模式重构** 🏗️
+  - 将 5400+ 行的单体 `db.ts` 拆分为 14 个独立 Repository 文件
+  - 新增 `database/repositories/` 目录，采用 Repository Pattern 架构
+  - `db.ts` 瘦身至 ~1000 行，仅保留 DDL、迁移逻辑和一行委托方法
+  - 提取的 Repository：`base`、`domain`、`ip`、`rule`、`proxy`、`device`、`country`、`timeseries`、`traffic-writer`、`config`、`backend`、`auth`、`surge`
+  - `BaseRepository` 封装了 `parseMinuteRange`、`expandShortChainsForRules` 等 13 个共享工具方法
+- **代码清理**（~140 行）
+  - 移除未使用的 `parseRule` 函数、重复的 `buildGatewayHeaders`/`getGatewayBaseUrl`
+  - 清理调试 `console.log`、未使用的 `sleep()`、`DailyStats` 导入
+  - 移除未使用的 `EXTENDED_RETENTION`/`MINIMAL_RETENTION` 常量
+
+### 技术细节
+
+- Surge 采集器使用 `/v1/policy_groups/select` 端点获取策略组详情
+- `BackendRepository` 新增 `type: 'clash' | 'surge'` 字段，贯穿创建、查询、更新全链路
+- 清理 `/api/gateway/proxies` 中的调试代码
+
 ## [1.2.6] - 2026-02-13
 
 ### 安全

@@ -95,3 +95,39 @@ export function InsightDetailSectionSkeleton({ className }: { className?: string
     </div>
   );
 }
+
+// Backend list skeleton for Settings dialog
+export function BackendListSkeleton({ count = 3 }: { count?: number }) {
+  return (
+    <div className="space-y-3">
+      {Array.from({ length: count }).map((_, idx) => (
+        <div
+          key={idx}
+          className="p-4 rounded-lg border border-border bg-card"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              {/* Icon skeleton */}
+              <div className="w-8 h-8 rounded-lg bg-muted/60 animate-pulse shrink-0" />
+              <div className="flex-1 min-w-0 space-y-2">
+                {/* Name skeleton */}
+                <div className="h-5 w-32 rounded bg-muted/60 animate-pulse" />
+                {/* URL skeleton */}
+                <div className="h-4 w-48 rounded bg-muted/50 animate-pulse" />
+              </div>
+            </div>
+            {/* Actions skeleton */}
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-16 rounded-full bg-muted/60 animate-pulse" />
+              <div className="h-8 w-8 rounded-lg bg-muted/50 animate-pulse" />
+              <div className="h-8 w-8 rounded-lg bg-muted/50 animate-pulse" />
+              <div className="h-8 w-8 rounded-lg bg-muted/50 animate-pulse" />
+            </div>
+          </div>
+        </div>
+      ))}
+      {/* Add button skeleton */}
+      <div className="h-12 rounded-lg border border-dashed border-border bg-card/50 animate-pulse" />
+    </div>
+  );
+}

@@ -13,8 +13,10 @@ config();
 
 import { StatsDatabase, BackendConfig } from './db.js';
 import { createCollector, GatewayCollector } from './collector.js';
+import { createSurgeCollector, SurgeCollector } from './surge-collector.js';
 import { StatsWebSocketServer } from './websocket.js';
 import { realtimeStore } from './realtime.js';
+import { SurgePolicySyncService } from './modules/surge/surge-policy-sync.js';
 
 let wsServer: StatsWebSocketServer;
 
@@ -25,12 +27,13 @@ const COLLECTOR_WS_PORT = parseInt(process.env.COLLECTOR_WS_PORT || '3002');
 const API_PORT = parseInt(process.env.API_PORT || '3001');
 const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), 'stats.db');
 
-// Map of backend connections: backendId -> GatewayCollector
-const collectors = new Map<number, GatewayCollector>();
+// Map of backend connections: backendId -> GatewayCollector | SurgeCollector
+const collectors = new Map<number, GatewayCollector | SurgeCollector>();
 let db: StatsDatabase;
 
 let apiServer: APIServer;
 let geoService: GeoIPService;
+let policySyncService: SurgePolicySyncService;
 
 // Track last known backend configs to detect changes
 let lastBackendConfigs: Map<number, BackendConfig> = new Map();
@@ -50,9 +53,12 @@ async function main() {
   wsServer = new StatsWebSocketServer(COLLECTOR_WS_PORT, db);
   wsServer.start();
 
+  // Initialize policy sync service
+  policySyncService = new SurgePolicySyncService(db);
+
   // Initialize API server
   console.log('[Main] Starting API server on port', API_PORT);
-  apiServer = new APIServer(API_PORT, db, realtimeStore);
+  apiServer = new APIServer(API_PORT, db, realtimeStore, policySyncService);
   apiServer.start();
 
   // Start backend management loop
@@ -108,6 +114,7 @@ async function manageBackends() {
       const needsRestart = existingCollector && lastConfig && (
         lastConfig.url !== backend.url ||
         lastConfig.token !== backend.token ||
+        lastConfig.type !== backend.type ||
         lastConfig.listening !== backend.listening ||
         lastConfig.enabled !== backend.enabled
       );
@@ -152,29 +159,50 @@ function startCollector(backend: BackendConfig) {
     return;
   }
 
-  console.log(`[Collector] Starting collector for backend "${backend.name}" (ID: ${backend.id}) at ${backend.url}`);
+  console.log(`[Collector] Starting ${backend.type || 'clash'} collector for backend "${backend.name}" (ID: ${backend.id}) at ${backend.url}`);
 
-  // Convert HTTP URL to WebSocket URL
-  let wsUrl = backend.url.replace(/^http:\/\//, 'ws://').replace(/^https:\/\//, 'wss://');
-  if (!wsUrl.endsWith('/connections')) {
-    wsUrl = `${wsUrl}/connections`;
+  if (backend.type === 'surge') {
+    // Start policy sync service for Surge
+    const baseUrl = backend.url.replace(/\/$/, '');
+    policySyncService.startSync(backend.id, baseUrl, backend.token || undefined);
+
+    // Create and start Surge collector (REST API polling)
+    const collector = createSurgeCollector(
+      db,
+      backend.url,
+      backend.token || undefined,
+      geoService,
+      () => {
+        // Broadcast stats update via WebSocket when new data arrives
+        wsServer.broadcastStats(backend.id);
+      },
+      backend.id // Pass backend ID for data isolation
+    );
+
+    collectors.set(backend.id, collector);
+    collector.start();
+  } else {
+    // Create and start Clash collector (WebSocket)
+    let wsUrl = backend.url.replace(/^http:\/\//, 'ws://').replace(/^https:\/\//, 'wss://');
+    if (!wsUrl.endsWith('/connections')) {
+      wsUrl = `${wsUrl}/connections`;
+    }
+
+    const collector = createCollector(
+      db,
+      wsUrl,
+      backend.token || undefined,
+      geoService,
+      () => {
+        // Broadcast stats update via WebSocket when new data arrives
+        wsServer.broadcastStats(backend.id);
+      },
+      backend.id // Pass backend ID for data isolation
+    );
+
+    collectors.set(backend.id, collector);
+    collector.connect();
   }
-
-  // Create and start collector
-  const collector = createCollector(
-    db,
-    wsUrl,
-    backend.token || undefined,
-    geoService,
-    () => {
-      // Broadcast stats update via WebSocket when new data arrives
-      wsServer.broadcastStats(backend.id);
-    },
-    backend.id // Pass backend ID for data isolation
-  );
-
-  collectors.set(backend.id, collector);
-  collector.connect();
 }
 
 // Stop a collector for a specific backend
@@ -182,19 +210,31 @@ function stopCollector(backendId: number) {
   const collector = collectors.get(backendId);
   if (collector) {
     console.log(`[Collector] Stopping collector for backend ID: ${backendId}`);
-    collector.disconnect();
+    if (collector instanceof GatewayCollector) {
+      collector.disconnect();
+    } else {
+      collector.stop();
+    }
     collectors.delete(backendId);
   }
+  
+  // Also stop policy sync for this backend
+  policySyncService.stopSync(backendId);
 }
 
 // Graceful shutdown
 function shutdown() {
   console.log('[Main] Shutting down...');
 
-  // Stop all collectors
+  // Stop all collectors and policy sync
   for (const [id, collector] of collectors) {
     console.log(`[Main] Disconnecting collector for backend ID: ${id}`);
-    collector.disconnect();
+    if (collector instanceof GatewayCollector) {
+      collector.disconnect();
+    } else {
+      collector.stop();
+    }
+    policySyncService.stopSync(id);
   }
   collectors.clear();
 

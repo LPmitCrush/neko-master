@@ -13,6 +13,7 @@ export interface BackendConfig {
   name: string;
   url: string;
   token: string;
+  type: 'clash' | 'surge';
   enabled: boolean;
   is_active: boolean;
   listening: boolean;
@@ -30,12 +31,12 @@ export class BackendRepository {
   /**
    * Create a new backend configuration
    */
-  createBackend(backend: { name: string; url: string; token?: string }): number {
+  createBackend(backend: { name: string; url: string; token?: string; type?: 'clash' | 'surge' }): number {
     const stmt = this.db.prepare(`
-      INSERT INTO backend_configs (name, url, token, enabled, is_active, listening)
-      VALUES (?, ?, ?, 1, 0, 1)
+      INSERT INTO backend_configs (name, url, token, type, enabled, is_active, listening)
+      VALUES (?, ?, ?, ?, 1, 0, 1)
     `);
-    const result = stmt.run(backend.name, backend.url, backend.token || '');
+    const result = stmt.run(backend.name, backend.url, backend.token || '', backend.type || 'clash');
     return Number(result.lastInsertRowid);
   }
 
@@ -44,7 +45,7 @@ export class BackendRepository {
    */
   getAllBackends(): BackendConfig[] {
     const stmt = this.db.prepare(`
-      SELECT id, name, url, token, enabled, is_active, listening, created_at, updated_at
+      SELECT id, name, url, token, type, enabled, is_active, listening, created_at, updated_at
       FROM backend_configs
       ORDER BY created_at ASC
     `);
@@ -56,7 +57,7 @@ export class BackendRepository {
    */
   getBackend(id: number): BackendConfig | undefined {
     const stmt = this.db.prepare(`
-      SELECT id, name, url, token, enabled, is_active, listening, created_at, updated_at
+      SELECT id, name, url, token, type, enabled, is_active, listening, created_at, updated_at
       FROM backend_configs
       WHERE id = ?
     `);
@@ -68,7 +69,7 @@ export class BackendRepository {
    */
   getActiveBackend(): BackendConfig | undefined {
     const stmt = this.db.prepare(`
-      SELECT id, name, url, token, enabled, is_active, listening, created_at, updated_at
+      SELECT id, name, url, token, type, enabled, is_active, listening, created_at, updated_at
       FROM backend_configs
       WHERE is_active = 1
       LIMIT 1
@@ -81,7 +82,7 @@ export class BackendRepository {
    */
   getListeningBackends(): BackendConfig[] {
     const stmt = this.db.prepare(`
-      SELECT id, name, url, token, enabled, is_active, listening, created_at, updated_at
+      SELECT id, name, url, token, type, enabled, is_active, listening, created_at, updated_at
       FROM backend_configs
       WHERE listening = 1 AND enabled = 1
     `);
@@ -106,6 +107,10 @@ export class BackendRepository {
     if (updates.token !== undefined) {
       sets.push('token = ?');
       values.push(updates.token);
+    }
+    if (updates.type !== undefined) {
+      sets.push('type = ?');
+      values.push(updates.type);
     }
     if (updates.enabled !== undefined) {
       sets.push('enabled = ?');

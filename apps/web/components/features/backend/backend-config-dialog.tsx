@@ -32,6 +32,12 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -53,6 +59,7 @@ import { cn, formatBytes, formatNumber } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { BackendVerifyAnimation } from "@/components/features/backend/backend-verify-animation";
+import { BackendListSkeleton } from "@/components/ui/insight-skeleton";
 import { useSettings, FaviconProvider, getFaviconUrl } from "@/lib/settings";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -235,6 +242,13 @@ function FaviconProviderPreview({
   );
 }
 
+interface BackendHealth {
+  status: 'healthy' | 'unhealthy' | 'unknown';
+  lastChecked: number;
+  message?: string;
+  latency?: number;
+}
+
 interface Backend {
   id: number;
   name: string;
@@ -242,10 +256,12 @@ interface Backend {
   host: string;
   port: number;
   token: string;
+  type?: 'clash' | 'surge';
   enabled: boolean;
   is_active: boolean;
   listening: boolean;
   hasToken?: boolean;
+  health?: BackendHealth;
   created_at: string;
 }
 
@@ -309,13 +325,10 @@ export function BackendConfigDialog({
   const commonT = useTranslations("common");
 
   const [backends, setBackends] = useState<Backend[]>([]);
+  const [backendsLoading, setBackendsLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [testingId, setTestingId] = useState<number | null>(null);
-  const [testResult, setTestResult] = useState<{
-    success: boolean;
-    message: string;
-  } | null>(null);
   const [activeTab, setActiveTab] = useState<
     "backends" | "database" | "preferences" | "security"
   >("backends");
@@ -380,6 +393,7 @@ export function BackendConfigDialog({
     name: string;
     url: string;
     token: string;
+    type: 'clash' | 'surge';
   } | null>(null);
 
   const [formData, setFormData] = useState({
@@ -388,6 +402,7 @@ export function BackendConfigDialog({
     port: "9090",
     ssl: false,
     token: "",
+    type: "clash" as 'clash' | 'surge',
   });
 
   const [editFormData, setEditFormData] = useState({
@@ -396,6 +411,7 @@ export function BackendConfigDialog({
     port: "9090",
     ssl: false,
     token: "",
+    type: "clash" as 'clash' | 'surge',
   });
 
   const [showAddForm, setShowAddForm] = useState(false);
@@ -409,16 +425,19 @@ export function BackendConfigDialog({
   }, [open]);
 
   const loadBackends = async () => {
+    setBackendsLoading(true);
     try {
       const data = await api.getBackends();
       // Parse URL to host/port for display
       const parsedData: Backend[] = data.map((b) => {
         const parsed = parseUrl(b.url);
-        return { ...b, host: parsed.host, port: parseInt(parsed.port) || 9090 };
+        return { ...b, type: b.type || 'clash', host: parsed.host, port: parseInt(parsed.port) || 9090 };
       });
       setBackends(parsedData);
     } catch (error) {
       console.error("Failed to load backends:", error);
+    } finally {
+      setBackendsLoading(false);
     }
   };
 
@@ -513,14 +532,14 @@ export function BackendConfigDialog({
     const url = buildUrl(formData.host, formData.port, formData.ssl);
 
     // Show verification animation immediately
-    setPendingBackend({ name: formData.name, url, token: formData.token });
+    setPendingBackend({ name: formData.name, url, token: formData.token, type: formData.type });
     setVerifyPhase("pending");
     setVerifyMessage("");
     setShowVerifyAnimation(true);
 
     // Perform verification
     try {
-      const testResult = await api.testBackend(url, formData.token);
+      const testResult = await api.testBackend(url, formData.token, formData.type);
 
       if (testResult.success) {
         setVerifyPhase("success");
@@ -546,6 +565,7 @@ export function BackendConfigDialog({
           name: pendingBackend.name,
           url: pendingBackend.url,
           token: pendingBackend.token,
+          type: pendingBackend.type,
         });
 
         setFormData({
@@ -554,6 +574,7 @@ export function BackendConfigDialog({
           port: "9090",
           ssl: false,
           token: "",
+          type: "clash",
         });
         setShowAddForm(false);
         setShowVerifyAnimation(false);
@@ -563,11 +584,7 @@ export function BackendConfigDialog({
 
         // Show success message for first backend
         if (result.isActive) {
-          setTestResult({
-            success: true,
-            message: t("firstBackendAutoActive"),
-          });
-          setTimeout(() => setTestResult(null), 3000);
+          toast.success(t("firstBackendAutoActive"));
         }
 
         if (isFirstTime && onConfigComplete) {
@@ -599,6 +616,7 @@ export function BackendConfigDialog({
         name: editFormData.name,
         url,
         token: editFormData.token || undefined,
+        type: editFormData.type,
       });
       setEditingId(null);
       setEditFormData({
@@ -607,6 +625,7 @@ export function BackendConfigDialog({
         port: "9090",
         ssl: false,
         token: "",
+        type: "clash",
       });
       await loadBackends();
       await onBackendChange?.();
@@ -701,15 +720,15 @@ export function BackendConfigDialog({
 
   const handleTest = async (backend: Backend) => {
     setTestingId(backend.id);
-    setTestResult(null);
     try {
       const result = await api.testBackendById(backend.id);
-      setTestResult(result);
+      if (result.success) {
+        toast.success(result.message);
+      } else {
+        toast.error(result.message);
+      }
     } catch (error: any) {
-      setTestResult({
-        success: false,
-        message: error.message || "Test failed",
-      });
+      toast.error(error.message || "Test failed");
     } finally {
       setTestingId(null);
     }
@@ -834,6 +853,7 @@ export function BackendConfigDialog({
       port: String(backend.port || 9090),
       ssl: backend.url.startsWith("https"),
       token: "",
+      type: backend.type || "clash",
     });
     setShowAddForm(false);
   };
@@ -846,6 +866,7 @@ export function BackendConfigDialog({
       port: "9090",
       ssl: false,
       token: "",
+      type: "clash",
     });
   };
 
@@ -905,6 +926,17 @@ export function BackendConfigDialog({
             {activeTab === "backends" ? (
               // Backends Tab
               <div className="space-y-3">
+                {backendsLoading ? (
+                  <BackendListSkeleton count={3} />
+                ) : backends.length === 0 && !showAddForm ? (
+                  // Empty state
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Server className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p className="text-sm">{t("noBackends")}</p>
+                    <p className="text-xs mt-1 opacity-70">{t("addBackendHint")}</p>
+                  </div>
+                ) : (
+                  <>
                 {backends.map((backend) => (
                   <div
                     key={backend.id}
@@ -937,6 +969,23 @@ export function BackendConfigDialog({
                           </div>
                           <div>
                             <label className="text-xs font-medium">
+                              {t("type")}
+                            </label>
+                            <select
+                              value={editFormData.type}
+                              onChange={(e) =>
+                                setEditFormData({ ...editFormData, type: e.target.value as 'clash' | 'surge' })
+                              }
+                              className="h-9 mt-1 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            >
+                              <option value="clash">Clash / Mihomo</option>
+                              <option value="surge">Surge</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-xs font-medium">
                               {t("host")}
                             </label>
                             <Input
@@ -951,8 +1000,6 @@ export function BackendConfigDialog({
                               className="h-9 mt-1"
                             />
                           </div>
-                        </div>
-                        <div className="grid grid-cols-3 gap-3">
                           <div>
                             <label className="text-xs font-medium">
                               {t("port")}
@@ -969,18 +1016,18 @@ export function BackendConfigDialog({
                               className="h-9 mt-1"
                             />
                           </div>
-                          <div className="col-span-2 flex items-center gap-2 pt-5">
-                            <Switch
-                              checked={editFormData.ssl}
-                              onCheckedChange={(checked) =>
-                                setEditFormData({
-                                  ...editFormData,
-                                  ssl: checked,
-                                })
-                              }
-                            />
-                            <label className="text-sm">{t("useSsl")}</label>
-                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={editFormData.ssl}
+                            onCheckedChange={(checked) =>
+                              setEditFormData({
+                                ...editFormData,
+                                ssl: checked,
+                              })
+                            }
+                          />
+                          <label className="text-sm">{t("useSsl")}</label>
                         </div>
                         <div>
                           <label className="text-xs font-medium">
@@ -1029,6 +1076,17 @@ export function BackendConfigDialog({
                             <span className="font-medium text-base">
                               {backend.name}
                             </span>
+                            {/* Backend Type Icon */}
+                            <div
+                              className="w-4 h-4 rounded-sm bg-white/90 flex items-center justify-center p-0.5"
+                              title={backend.type === 'surge' ? 'Surge' : 'Clash / Mihomo'}
+                            >
+                              <img
+                                src={backend.type === 'surge' ? '/icons/icon-surge.png' : '/icons/icon-clash.png'}
+                                alt={backend.type === 'surge' ? 'Surge' : 'Clash'}
+                                className="w-full h-full object-contain"
+                              />
+                            </div>
                             {!backend.enabled && (
                               <span className="px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-xs font-medium">
                                 {t("disabled")}
@@ -1088,20 +1146,51 @@ export function BackendConfigDialog({
                               />
                             </Button>
 
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => handleTest(backend)}
-                              disabled={testingId === backend.id}
-                              title={t("testConnection")}>
-                              <RefreshCw
-                                className={cn(
-                                  "w-4 h-4",
-                                  testingId === backend.id && "animate-spin",
-                                )}
-                              />
-                            </Button>
+                            <TooltipProvider delayDuration={100}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className={cn(
+                                      "h-8 w-8",
+                                      backend.health?.status === 'healthy' && "text-green-600 hover:text-green-700 hover:bg-green-50",
+                                      backend.health?.status === 'unhealthy' && "text-red-500 hover:text-red-600 hover:bg-red-50",
+                                      !backend.health && "text-gray-400"
+                                    )}
+                                    onClick={() => handleTest(backend)}
+                                    disabled={testingId === backend.id}>
+                                    <RefreshCw
+                                      className={cn(
+                                        "w-4 h-4",
+                                        testingId === backend.id && "animate-spin",
+                                        backend.health?.status === 'healthy' && !testingId && "text-green-500",
+                                        backend.health?.status === 'unhealthy' && !testingId && "text-red-500",
+                                      )}
+                                    />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="text-xs max-w-[200px]">
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="font-medium">{t("testConnection")}</span>
+                                    {backend.health ? (
+                                      <span className={cn(
+                                        "text-[10px]",
+                                        backend.health.status === 'healthy' ? "text-green-500" : 
+                                        backend.health.status === 'unhealthy' ? "text-red-500" : "text-gray-400"
+                                      )}>
+                                        {backend.health.message || 
+                                          (backend.health.status === 'healthy' ? 'Healthy' : 
+                                           backend.health.status === 'unhealthy' ? 'Unhealthy' : 'Unknown')}
+                                        {backend.health.latency && ` (${backend.health.latency}ms)`}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] text-gray-400">Click to test connection</span>
+                                    )}
+                                  </div>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
 
                             <Button
                               variant="ghost"
@@ -1128,23 +1217,7 @@ export function BackendConfigDialog({
                     )}
                   </div>
                 ))}
-
-                {/* Test Result */}
-                {testResult && (
-                  <div
-                    className={cn(
-                      "p-3 rounded-lg flex items-center gap-2 text-sm",
-                      testResult.success
-                        ? "bg-green-500/10 text-green-600 border border-green-500/20"
-                        : "bg-destructive/10 text-destructive border border-destructive/20",
-                    )}>
-                    {testResult.success ? (
-                      <CheckCircle2 className="w-4 h-4 shrink-0" />
-                    ) : (
-                      <AlertCircle className="w-4 h-4 shrink-0" />
-                    )}
-                    {testResult.message}
-                  </div>
+                  </>
                 )}
 
                 {/* Add New Backend */}
@@ -1178,6 +1251,23 @@ export function BackendConfigDialog({
                         </div>
                         <div>
                           <label className="text-xs font-medium">
+                            {t("type")}
+                          </label>
+                          <select
+                            value={formData.type}
+                            onChange={(e) =>
+                              setFormData({ ...formData, type: e.target.value as 'clash' | 'surge' })
+                            }
+                            className="h-9 mt-1 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          >
+                            <option value="clash">Clash / Mihomo</option>
+                            <option value="surge">Surge</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs font-medium">
                             {t("host")} *
                           </label>
                           <Input
@@ -1189,8 +1279,6 @@ export function BackendConfigDialog({
                             className="h-9 mt-1"
                           />
                         </div>
-                      </div>
-                      <div className="grid grid-cols-3 gap-3">
                         <div>
                           <label className="text-xs font-medium">
                             {t("port")}
@@ -1204,15 +1292,15 @@ export function BackendConfigDialog({
                             className="h-9 mt-1"
                           />
                         </div>
-                        <div className="col-span-2 flex items-center gap-2 pt-5">
-                          <Switch
-                            checked={formData.ssl}
-                            onCheckedChange={(checked) =>
-                              setFormData({ ...formData, ssl: checked })
-                            }
-                          />
-                          <label className="text-sm">{t("useSsl")}</label>
-                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={formData.ssl}
+                          onCheckedChange={(checked) =>
+                            setFormData({ ...formData, ssl: checked })
+                          }
+                        />
+                        <label className="text-sm">{t("useSsl")}</label>
                       </div>
                       <div>
                         <label className="text-xs font-medium">
@@ -1224,7 +1312,7 @@ export function BackendConfigDialog({
                           onChange={(e) =>
                             setFormData({ ...formData, token: e.target.value })
                           }
-                          placeholder={t("tokenPlaceholder")}
+                          placeholder={formData.type === 'surge' ? t("tokenPlaceholderSurge") || "Surge API Key (x-key)" : t("tokenPlaceholder")}
                           className="h-9 mt-1"
                         />
                       </div>
@@ -1240,6 +1328,7 @@ export function BackendConfigDialog({
                                 port: "9090",
                                 ssl: false,
                                 token: "",
+                                type: "clash",
                               });
                             }}
                             className="flex-shrink-0">

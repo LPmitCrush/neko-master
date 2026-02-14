@@ -9,6 +9,8 @@ import cors from '@fastify/cors';
 import cookie from '@fastify/cookie';
 import type { StatsDatabase } from './db.js';
 import type { RealtimeStore } from './realtime.js';
+import { buildGatewayHeaders, getGatewayBaseUrl, parseSurgeRule } from '@neko-master/shared';
+import { SurgePolicySyncService } from './modules/surge/surge-policy-sync.js';
 
 // Import modules
 import { BackendService, backendController } from './modules/backend/index.js';
@@ -28,10 +30,11 @@ export interface AppOptions {
   db: StatsDatabase;
   realtimeStore: RealtimeStore;
   logger?: boolean;
+  policySyncService?: SurgePolicySyncService;
 }
 
 export async function createApp(options: AppOptions) {
-  const { port, db, realtimeStore, logger = false } = options;
+  const { port, db, realtimeStore, logger = false, policySyncService } = options;
   
   // Create Fastify instance
   const app = Fastify({ logger });
@@ -63,12 +66,88 @@ export async function createApp(options: AppOptions) {
     return statsService.resolveBackendId(backendId);
   };
 
-  const getGatewayBaseUrl = (url: string): string => {
-    return url
-      .replace(/^ws:\/\//, 'http://')
-      .replace(/^wss:\/\//, 'https://')
-      .replace(/\/connections\/?$/, '');
+  // ...
+
+  // Helper to get headers for backend requests
+  const getHeaders = (backend: { type: 'clash' | 'surge'; token: string }) => {
+    return buildGatewayHeaders(backend);
   };
+
+  // Compatibility routes: Gateway APIs
+  app.get('/api/gateway/proxies', async (request, reply) => {
+    const backendId = getBackendIdFromQuery(request.query as Record<string, unknown>);
+    if (backendId === null) {
+      return reply.status(404).send({ error: 'No backend specified or active' });
+    }
+
+    const backend = db.getBackend(backendId);
+    if (!backend) {
+      return reply.status(404).send({ error: 'Backend not found' });
+    }
+
+    const gatewayBaseUrl = getGatewayBaseUrl(backend.url);
+    const isSurge = backend.type === 'surge';
+    const headers = getHeaders(backend);
+
+    try {
+      if (isSurge) {
+        // Surge: Get policies list and details
+        const res = await fetch(`${gatewayBaseUrl}/v1/policies`, { headers });
+        if (!res.ok) {
+          return reply.status(res.status).send({ error: `Surge API error: ${res.status}` });
+        }
+        
+        const data = await res.json() as { proxies: string[]; 'policy-groups': string[] };
+        const proxies: Record<string, { name: string; type: string; now?: string }> = {};
+        
+        // Get current selection for each policy group
+        const policyGroups = data['policy-groups'] || [];
+        const groupDetails = await Promise.allSettled(
+          policyGroups.map(async (groupName: string) => {
+            try {
+              const detailRes = await fetch(
+                `${gatewayBaseUrl}/v1/policies/${encodeURIComponent(groupName)}`,
+                { headers, signal: AbortSignal.timeout(5000) }
+              );
+              if (!detailRes.ok) return { groupName, now: null };
+              const detail = await detailRes.json() as { policy?: string };
+              return { groupName, now: detail.policy || null };
+            } catch {
+              return { groupName, now: null };
+            }
+          })
+        );
+        
+        for (const result of groupDetails) {
+          if (result.status === 'fulfilled') {
+            const { groupName, now } = result.value;
+            proxies[groupName] = { name: groupName, type: 'Selector', now: now || '' };
+          }
+        }
+        
+        // Add leaf proxies
+        if (data.proxies) {
+          for (const name of data.proxies) {
+            proxies[name] = { name, type: 'Unknown' };
+          }
+        }
+        
+        return { proxies };
+      } else {
+        // Clash/OpenClash: Direct proxy to /proxies endpoint
+        const res = await fetch(`${gatewayBaseUrl}/proxies`, { 
+          headers: { ...headers, 'Content-Type': 'application/json' }
+        });
+        if (!res.ok) {
+          return reply.status(res.status).send({ error: `Gateway API error: ${res.status}` });
+        }
+        return res.json();
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to reach Gateway API';
+      return reply.status(502).send({ error: message });
+    }
+  });
 
   // Health check endpoint (not part of any module)
   app.get('/health', async () => ({ status: 'ok' }));
@@ -171,7 +250,10 @@ export async function createApp(options: AppOptions) {
 
   // Compatibility routes: Gateway APIs
   app.get('/api/gateway/providers/proxies', async (request, reply) => {
-    const backendId = getBackendIdFromQuery(request.query as Record<string, unknown>);
+    const query = request.query as Record<string, unknown>;
+    const backendId = getBackendIdFromQuery(query);
+    const forceRefresh = query.refresh === 'true';
+    
     if (backendId === null) {
       return reply.status(404).send({ error: 'No backend specified or active' });
     }
@@ -182,21 +264,159 @@ export async function createApp(options: AppOptions) {
     }
 
     const gatewayBaseUrl = getGatewayBaseUrl(backend.url);
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (backend.token) {
-      headers.Authorization = `Bearer ${backend.token}`;
-    }
+    const isSurge = backend.type === 'surge';
+    const headers = getHeaders(backend);
 
     try {
-      const res = await fetch(`${gatewayBaseUrl}/providers/proxies`, { headers });
-      if (!res.ok) {
-        return reply.status(res.status).send({ error: `Gateway API error: ${res.status}` });
+      if (isSurge) {
+        // Build response from cache or fetch directly
+        const providers: Record<string, { proxies: { name: string; type: string; now?: string }[] }> = {};
+        let cacheStatus = policySyncService?.getCacheStatus(backendId);
+        
+        // Try to use cache first
+        if (cacheStatus?.cached && !forceRefresh) {
+          const cachedPolicies = db.getSurgePolicyCache(backendId);
+          for (const policy of cachedPolicies) {
+            if (policy.selectedPolicy) {
+              providers[policy.policyGroup] = {
+                proxies: [{ name: policy.policyGroup, type: policy.policyType, now: policy.selectedPolicy }]
+              };
+            }
+          }
+        }
+        
+        // If no cache or force refresh, fetch directly from Surge
+        if (Object.keys(providers).length === 0 || forceRefresh) {
+          try {
+            const res = await fetch(`${gatewayBaseUrl}/v1/policies`, { 
+              headers, 
+              signal: AbortSignal.timeout(10000) 
+            });
+            
+            if (!res.ok) {
+              throw new Error(`Surge API error: ${res.status}`);
+            }
+            
+            const data = await res.json() as { 
+              proxies: string[]; 
+              'policy-groups': string[];
+            };
+            
+            const policyGroups = data['policy-groups'] || [];
+            
+            // Fetch details for each policy group
+            // Surge uses /v1/policy_groups/select?group_name=xxx endpoint
+            const groupDetails = await Promise.allSettled(
+              policyGroups.map(async (groupName: string) => {
+                try {
+                  const detailRes = await fetch(
+                    `${gatewayBaseUrl}/v1/policy_groups/select?group_name=${encodeURIComponent(groupName)}`,
+                    { headers, signal: AbortSignal.timeout(5000) }
+                  );
+                  if (!detailRes.ok) return null;
+                  const detail = await detailRes.json() as { policy?: string; type?: string };
+                  return { 
+                    name: groupName, 
+                    now: detail.policy || '', 
+                    type: detail.type || 'Select' 
+                  };
+                } catch {
+                  return null;
+                }
+              })
+            );
+            
+            // Build providers from fetched data
+            let successCount = 0;
+            for (const result of groupDetails) {
+              if (result.status === 'fulfilled' && result.value && result.value.now) {
+                providers[result.value.name] = {
+                  proxies: [{ 
+                    name: result.value.name, 
+                    type: result.value.type, 
+                    now: result.value.now 
+                  }]
+                };
+                successCount++;
+              }
+            }
+            
+            // Add standalone proxies
+            if (data.proxies?.length > 0) {
+              providers['default'] = {
+                proxies: data.proxies.map(name => ({ name, type: 'Unknown' }))
+              };
+            }
+            
+            // Also update cache in background
+            if (policySyncService) {
+              policySyncService.syncNow(backendId, gatewayBaseUrl, backend.token || undefined)
+                .catch(err => console.error(`[Gateway] Background sync failed:`, err.message));
+            }
+            
+          } catch (error) {
+            console.error(`[Gateway] Failed to fetch from Surge:`, error);
+            if (Object.keys(providers).length === 0) {
+              return reply.status(502).send({ 
+                error: 'Failed to fetch policies',
+                message: error instanceof Error ? error.message : 'Unknown error'
+              });
+            }
+          }
+        }
+
+        return {
+          providers,
+          _cache: cacheStatus ? {
+            cached: cacheStatus.cached,
+            lastUpdate: cacheStatus.lastUpdate,
+            policyCount: cacheStatus.policyCount,
+          } : undefined
+        };
+      } else {
+        // Clash/OpenClash: direct proxy
+        const res = await fetch(`${gatewayBaseUrl}/providers/proxies`, { 
+          headers: { ...headers, 'Content-Type': 'application/json' }
+        });
+        if (!res.ok) {
+          return reply.status(res.status).send({ error: `Gateway API error: ${res.status}` });
+        }
+        return res.json();
       }
-      return res.json();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to reach Gateway API';
       return reply.status(502).send({ error: message });
     }
+  });
+
+  // Manual refresh endpoint for Surge policies
+  app.post('/api/gateway/providers/proxies/refresh', async (request, reply) => {
+    const backendId = getBackendIdFromQuery(request.query as Record<string, unknown>);
+    if (backendId === null) {
+      return reply.status(404).send({ error: 'No backend specified or active' });
+    }
+
+    const backend = db.getBackend(backendId);
+    if (!backend || backend.type !== 'surge') {
+      return reply.status(400).send({ error: 'Only Surge backend supports this operation' });
+    }
+
+    if (!policySyncService) {
+      return reply.status(503).send({ error: 'Policy sync service not available' });
+    }
+
+    const gatewayBaseUrl = getGatewayBaseUrl(backend.url);
+    const result = await policySyncService.syncNow(
+      backendId,
+      gatewayBaseUrl,
+      backend.token || undefined
+    );
+
+    return {
+      success: result.success,
+      message: result.message,
+      updated: result.updated,
+    };
   });
 
   app.get('/api/gateway/rules', async (request, reply) => {
@@ -211,17 +431,47 @@ export async function createApp(options: AppOptions) {
     }
 
     const gatewayBaseUrl = getGatewayBaseUrl(backend.url);
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (backend.token) {
-      headers.Authorization = `Bearer ${backend.token}`;
-    }
+    const isSurge = backend.type === 'surge';
+    const headers = getHeaders(backend);
 
     try {
-      const res = await fetch(`${gatewayBaseUrl}/rules`, { headers });
-      if (!res.ok) {
-        return reply.status(res.status).send({ error: `Gateway API error: ${res.status}` });
+      if (isSurge) {
+        // Surge uses /v1/rules endpoint
+        const res = await fetch(`${gatewayBaseUrl}/v1/rules`, { headers });
+        if (!res.ok) {
+          return reply.status(res.status).send({ error: `Surge API error: ${res.status}` });
+        }
+        
+        const data = await res.json() as { rules: string[]; 'available-policies': string[] };
+        
+        // Parse Surge rules to standard format
+        const parsedRules = data.rules
+          .map(raw => {
+            const parsed = parseSurgeRule(raw);
+            return parsed ? { type: parsed.type, payload: parsed.payload, policy: parsed.policy, raw } : null;
+          })
+          .filter((r): r is NonNullable<typeof r> => r !== null);
+
+        return {
+          rules: parsedRules.map(r => ({
+            type: r.type,
+            payload: r.payload,
+            proxy: r.policy,
+            size: 0,
+          })),
+          _source: 'surge' as const,
+          _availablePolicies: data['available-policies'],
+        };
+      } else {
+        // Clash/OpenClash uses /rules endpoint
+        const res = await fetch(`${gatewayBaseUrl}/rules`, { 
+          headers: { ...headers, 'Content-Type': 'application/json' }
+        });
+        if (!res.ok) {
+          return reply.status(res.status).send({ error: `Gateway API error: ${res.status}` });
+        }
+        return res.json();
       }
-      return res.json();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to reach Gateway API';
       return reply.status(502).send({ error: message });
@@ -280,6 +530,9 @@ export async function createApp(options: AppOptions) {
   await app.listen({ port, host: '0.0.0.0' });
   console.log(`[API] Server running at http://localhost:${port}`);
 
+  // Start automatic health checks for upstream gateways
+  backendService.startHealthChecks();
+
   return app;
 }
 
@@ -288,11 +541,18 @@ export class APIServer {
   private db: StatsDatabase;
   private realtimeStore: RealtimeStore;
   private port: number;
+  private policySyncService?: SurgePolicySyncService;
 
-  constructor(port: number, db: StatsDatabase, realtimeStore: RealtimeStore) {
+  constructor(
+    port: number, 
+    db: StatsDatabase, 
+    realtimeStore: RealtimeStore,
+    policySyncService?: SurgePolicySyncService
+  ) {
     this.port = port;
     this.db = db;
     this.realtimeStore = realtimeStore;
+    this.policySyncService = policySyncService;
   }
 
   async start() {
@@ -300,6 +560,7 @@ export class APIServer {
       port: this.port,
       db: this.db,
       realtimeStore: this.realtimeStore,
+      policySyncService: this.policySyncService,
       logger: false,
     });
     return this.app;
