@@ -17,8 +17,11 @@
   <a href="https://github.com/foru17/neko-master/stargazers"><img src="https://img.shields.io/github/stars/foru17/neko-master?style=flat-square&color=yellow" alt="Stars"></a>
   <a href="https://hub.docker.com/r/foru17/neko-master"><img src="https://img.shields.io/docker/pulls/foru17/neko-master?style=flat-square&color=blue&logo=docker" alt="Docker Pulls"></a>
   <a href="https://hub.docker.com/r/foru17/neko-master"><img src="https://img.shields.io/docker/v/foru17/neko-master?style=flat-square&label=Docker&color=2496ED" alt="Docker Version"></a>
+  <a href="https://hub.docker.com/r/foru17/neko-master"><img src="https://img.shields.io/docker/image-size/foru17/neko-master/latest?style=flat-square&logo=docker" alt="Image Size"></a>
   <a href="https://github.com/foru17/neko-master/blob/main/LICENSE"><img src="https://img.shields.io/github/license/foru17/neko-master?style=flat-square&color=green" alt="License"></a>
   <img src="https://img.shields.io/badge/Node.js-22-339933?style=flat-square&logo=node.js">
+  <a href="https://github.com/foru17/neko-master/actions/workflows/docker-build.yml"><img src="https://img.shields.io/github/actions/workflow/status/foru17/neko-master/docker-build.yml?style=flat-square&label=Docker%20CI" alt="Docker CI"></a>
+  <a href="./docs/architecture.md"><img src="https://img.shields.io/badge/docs-architecture-0ea5e9?style=flat-square" alt="Architecture Docs"></a>
 </p>
 
 > [!IMPORTANT]
@@ -33,9 +36,24 @@
 >
 > This project is open-sourced under the MIT License. We assume no responsibility for any consequences resulting from the use of this software. Please use it in compliance with applicable laws and regulations.
 
-![Neko Master Overview](./assets/neko-master-overview.png)
-![Neko Master Rules](./assets/neko-master-rules.png)
-![Neko Master Regions](./assets/neko-master-regions.png)
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="./assets/neko-master-overview-light.png" alt="Neko Master Preview (Light 1)" />
+    </td>
+    <td align="center" width="50%">
+      <img src="./assets/neko-master-regions-light.png" alt="Neko Master Preview (Light 2)" />
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="./assets/neko-master-rules-dark.png" alt="Neko Master Preview (Dark 1)" />
+    </td>
+    <td align="center" width="50%">
+      <img src="./assets/neko-master-domains-dark.png" alt="Neko Master Preview (Dark 2)" />
+    </td>
+  </tr>
+</table>
 
 ## About the Name
 
@@ -53,9 +71,12 @@ It is a lightweight analytics dashboard designed for modern gateway environments
 - [🔧 Port Conflict Resolution](#-port-conflict-resolution)
 - [🐳 Docker Configuration](#-docker-configuration)
 - [🌐 Reverse Proxy & Tunnel](#-reverse-proxy--tunnel)
+- [🔐 Authentication & Security](#-authentication--security)
 - [❓ FAQ](#-faq)
+- [🏗️ Architecture Guide](#-architecture-guide)
+- [🤝 Feedback & Issues](#-feedback--issues)
 - [📁 Project Structure](#-project-structure)
-- [🛠️ Tech Stack](#️-tech-stack)
+- [🛠️ Tech Stack](#-tech-stack)
 - [📄 License](#-license)
 
 ## ✨ Features
@@ -76,6 +97,9 @@ It is a lightweight analytics dashboard designed for modern gateway environments
 
 ### Option 1: Docker Compose (Recommended)
 
+> The repository's built-in `docker-compose.yml` maps `3000/3001/3002` by default.  
+> Scenarios A/B below are minimal templates for common deployments.
+
 #### Scenario A: Minimal deployment (only expose 3000)
 
 ```yaml
@@ -91,7 +115,11 @@ services:
     environment:
       - NODE_ENV=production
       - DB_PATH=/app/data/stats.db
+      - COOKIE_SECRET=${COOKIE_SECRET}
 ```
+
+> Recommended in `.env` (same directory as `docker-compose.yml`):  
+> `COOKIE_SECRET=<at least 32-byte random string>` (generate with `openssl rand -hex 32`)
 
 > This mode is fully upgrade-compatible and works out of the box.  
 > If WS is not routed, the app falls back to HTTP polling automatically.
@@ -112,6 +140,7 @@ services:
     environment:
       - NODE_ENV=production
       - DB_PATH=/app/data/stats.db
+      - COOKIE_SECRET=${COOKIE_SECRET}
 ```
 
 Then run:
@@ -122,7 +151,14 @@ docker compose up -d
 
 Open <http://localhost:3000> to get started.
 
+If you use the repository's built-in Compose file (default `3000/3001/3002`), run the same command.
+
 ### Option 2: Docker Run
+
+```bash
+# Generate a fixed cookie secret first (for session persistence)
+export COOKIE_SECRET="$(openssl rand -hex 32)"
+```
 
 ```bash
 # Minimal (only 3000)
@@ -130,6 +166,7 @@ docker run -d \
   --name neko-master \
   -p 3000:3000 \
   -v $(pwd)/data:/app/data \
+  -e COOKIE_SECRET="$COOKIE_SECRET" \
   --restart unless-stopped \
   foru17/neko-master:latest
 
@@ -139,6 +176,7 @@ docker run -d \
   -p 3000:3000 \
   -p 3002:3002 \
   -v $(pwd)/data:/app/data \
+  -e COOKIE_SECRET="$COOKIE_SECRET" \
   --restart unless-stopped \
   foru17/neko-master:latest
 ```
@@ -148,8 +186,8 @@ Open <http://localhost:3000> to get started.
 > The frontend uses same-origin `/api` by default, so port 3001 is usually not required externally.  
 > For real-time WS, your reverse proxy/tunnel must be able to reach port `3002`. If not, the app falls back to ~5s HTTP polling.
 
-> If you use custom external ports with `docker run`, also pass:
-> `-e WEB_EXTERNAL_PORT=8080 -e API_EXTERNAL_PORT=8081 -e WS_EXTERNAL_PORT=8082`
+> For `docker run`, change external ports using `-p` mappings directly.  
+> Only if you use direct WS access (no reverse proxy) and external WS port is not `3002`, also pass `-e WS_EXTERNAL_PORT=<external-ws-port>`.
 
 ### Option 3: One-Click Script
 
@@ -180,11 +218,18 @@ cd neko-master
 # 2. Install dependencies
 pnpm install
 
-# 3. Start development services
+# 3. Prepare collector env (source mode reads apps/collector/.env)
+cp apps/collector/.env.example apps/collector/.env
+
+# 4. Start development services
 pnpm dev
 ```
 
 Open <http://localhost:3000> to configure.
+
+> In source mode: collector listens on `3001/3002`, web listens on `3000` by default.  
+> If you changed `API_PORT` (not 3001), set `API_URL` accordingly (for example `API_URL=http://localhost:4001`) so web `/api` rewrite targets the correct API.  
+> `apps/collector/.env.local` takes precedence over `apps/collector/.env`.
 
 ## 📖 First Use
 
@@ -255,6 +300,7 @@ Create a `.env` file in the same directory as `docker-compose.yml`:
 WEB_EXTERNAL_PORT=8080    # Change Web UI port
 API_EXTERNAL_PORT=8081    # Change API port
 WS_EXTERNAL_PORT=8082     # Change WebSocket external port (only for direct access)
+COOKIE_SECRET=your-long-random-secret   # Strongly recommended to keep fixed
 ```
 
 Then restart:
@@ -274,7 +320,7 @@ ports:
   - "8082:3002" # External 8082 → Internal 3002 (for proxy/tunnel WS forwarding)
 ```
 
-> Note: the frontend reads external ports at runtime, so `NEXT_PUBLIC_WS_PORT` is no longer required.
+> Note: if you use direct WS access (no reverse proxy) and external WS port is not `3002`, set `WS_EXTERNAL_PORT=<external-ws-port>`.
 
 ### Solution 3: Use One-Click Script
 
@@ -288,31 +334,71 @@ The script will automatically detect and suggest available ports.
 
 ### Ports
 
-| Port |  Purpose  | External Required | Description                                                                      |
-| :--: | :-------: | :---------------: | :------------------------------------------------------------------------------- |
-| 3000 |  Web UI   |        ✅         | Frontend entry point                                                             |
-| 3001 |    API    |     Optional      | Frontend uses same-origin `/api` by default; usually no external exposure needed |
-| 3002 | WebSocket |     Optional      | Real-time push endpoint; recommended to forward via reverse proxy/tunnel         |
+| Port |  Purpose  | External Required | Description                                                                                                 |
+| :--: | :-------: | :---------------: | :---------------------------------------------------------------------------------------------------------- |
+| 3000 |  Web UI   |        ✅         | Frontend entry point                                                                                        |
+| 3001 |    API    |     Optional      | Frontend uses same-origin `/api` by default; usually no public exposure needed (default Compose maps it)  |
+| 3002 | WebSocket |     Optional      | Real-time push endpoint; recommended for reverse proxy/tunnel forwarding only (default Compose maps it)    |
 
-### Environment Variables (Docker)
+### Environment Variables (Deployment)
 
-| Variable              | Default              | Purpose                                    | When to set                          |
-| :-------------------- | :------------------- | :----------------------------------------- | :----------------------------------- |
-| `WEB_PORT`            | `3000`               | Web service listen port (inside container) | Usually unchanged                    |
-| `API_PORT`            | `3001`               | API service listen port (inside container) | Usually unchanged                    |
-| `COLLECTOR_WS_PORT`   | `3002`               | WS service listen port (inside container)  | Usually unchanged                    |
-| `DB_PATH`             | `/app/data/stats.db` | SQLite data path                           | Custom data path                     |
-| `WEB_EXTERNAL_PORT`   | `3000`               | Runtime-exposed external web port          | When external mapping changes        |
-| `API_EXTERNAL_PORT`   | `3001`               | Runtime-exposed external API port          | Only for direct API access           |
-| `WS_EXTERNAL_PORT`    | `3002`               | Runtime-exposed external WS port           | Only for direct WS access            |
-| `NEXT_PUBLIC_API_URL` | empty                | Override frontend API base URL             | When API is not same-origin          |
-| `NEXT_PUBLIC_WS_URL`  | auto `/_cm_ws`       | Override frontend WS URL                   | Only if you want custom WS path/host |
+| Variable | Default | Purpose | When to set |
+| :-- | :-- | :-- | :-- |
+| `WEB_PORT` | `3000` | Web listen port (inside container) | Usually unchanged |
+| `API_PORT` | `3001` | API listen port (inside container) | Usually unchanged |
+| `COLLECTOR_WS_PORT` | `3002` | WS listen port (inside container) | Usually unchanged |
+| `DB_PATH` | `/app/data/stats.db` | SQLite data path | Custom data path |
+| `WEB_EXTERNAL_PORT` | `3000` | External web port mapping in `docker-compose.yml` | External web port changed |
+| `API_EXTERNAL_PORT` | `3001` | External API port mapping in `docker-compose.yml` | Direct external API access needed |
+| `WS_EXTERNAL_PORT` | `3002` | External WS port mapping in `docker-compose.yml`; also used for direct WS port inference | Direct WS access without proxy and external WS port changed |
+| `NEXT_PUBLIC_API_URL` | empty | Override frontend API base URL (e.g. `https://api.example.com`) | API is not same-origin `/api` |
+| `NEXT_PUBLIC_WS_URL` | empty | Override frontend WS URL (absolute URL or `/custom_ws`) | Custom WS path/domain |
+| `NEXT_PUBLIC_WS_PORT` | `3002` | WS direct-connection fallback port (build-time exposed) | Direct WS mode needs explicit port |
+| `API_URL` | `http://localhost:3001` | Next.js `/api` rewrite target (mainly source/custom builds) | API listen address changed |
+| `COOKIE_SECRET` | auto-generated | Cookie signing secret; if not fixed, sessions can be invalidated after restart when data dir is not persisted | Strongly recommended in production |
+| `FORCE_ACCESS_CONTROL_OFF` | `false` | Force disable access control (emergency recovery) | Temporary use only when token is lost |
+| `SHOWCASE_SITE_MODE` | `false` | Read-only showcase mode (blocks sensitive write operations) | Public demo sites only |
+
+### Advanced Tuning Variables (Optional)
+
+| Variable | Default | Description |
+| :-- | :-- | :-- |
+| `FLUSH_INTERVAL_MS` | `30000` | Buffer flush interval for collector writes |
+| `FLUSH_MAX_BUFFER_SIZE` | `5000` | Max buffer entries before early flush |
+| `REALTIME_MAX_MINUTES` | `180` | Realtime in-memory window size (minutes) |
+| `REALTIME_RANGE_END_TOLERANCE_MS` | `120000` | End-time tolerance for range queries |
+| `SURGE_POLICY_SYNC_INTERVAL_MS` | `600000` | Surge policy sync interval |
+| `DB_RANGE_QUERY_CACHE_TTL_MS` | `8000` | Range-query cache TTL |
+| `DB_HISTORICAL_QUERY_CACHE_TTL_MS` | `300000` | Historical-query cache TTL |
+| `DB_RANGE_QUERY_CACHE_MAX_ENTRIES` | `1024` | Max range-query cache entries |
+| `DB_RANGE_QUERY_CACHE_DISABLED` | empty | Set `1` to disable range-query cache |
+| `DEBUG_SURGE` | `false` | Enable Surge collector debug logs (`true`) |
 
 ### API / WS Resolution Priority
 
-1. API: `runtime-config(API_URL)` → `NEXT_PUBLIC_API_URL` → same-origin `/api`
-2. WS: `runtime-config(WS_URL)` → `NEXT_PUBLIC_WS_URL` → auto detection
-3. Default already uses same-origin `/_cm_ws`; no manual env required for normal deployments
+1. API client base: `runtime-config.API_URL` → `NEXT_PUBLIC_API_URL` → same-origin `/api`
+2. `/api` server-side rewrite target: `API_URL` (default `http://localhost:3001`, applied in Next.js rewrites)
+3. WS URL: `runtime-config.WS_URL` → `NEXT_PUBLIC_WS_URL` → auto candidates (production prefers `/_cm_ws`, then direct port fallback)
+4. WS port: `runtime-config.WS_PORT` (from `WS_EXTERNAL_PORT`) → `NEXT_PUBLIC_WS_PORT` → `3002`
+5. In normal deployments, `NEXT_PUBLIC_WS_URL` is usually unnecessary unless you use a custom WS path/domain
+
+### Production Environment Baseline (Recommended)
+
+```env
+NODE_ENV=production
+DB_PATH=/app/data/stats.db
+COOKIE_SECRET=<at least 32-byte random string>
+# Keep false in normal operation
+# FORCE_ACCESS_CONTROL_OFF=false
+```
+
+Use `openssl rand -hex 32` to generate `COOKIE_SECRET`.
+
+Additional recommendations:
+
+1. Mount persistent storage (for example `./data:/app/data`) to avoid data and secret loss.
+2. If using direct WS access and external WS port is not `3002`, set `WS_EXTERNAL_PORT` accordingly.
+3. If API port/address changes in source deployment, update `API_URL` as well.
 
 ## 🌐 Reverse Proxy & Tunnel
 
@@ -392,6 +478,8 @@ For Zero Trust dashboard-managed routes (token mode), configure the same two rou
 5. `beacon.min.js` failures (Cloudflare analytics script) are typically unrelated to app API/WS data flow
 6. No extra `/api` reverse-proxy rule is required in most setups; frontend uses same-origin `/api` and app handles internal forwarding to `3001`
 
+> Note: `/_next/static/... 426 Upgrade Required` is common in **misconfigured reverse proxy / tunnel** setups; it is uncommon in direct local access without a proxy.
+
 ### Multi-Architecture Support
 
 Docker images support both `linux/amd64` and `linux/arm64`.
@@ -413,74 +501,155 @@ docker compose pull
 docker compose up -d
 ```
 
-## ❓ FAQ
+## 🔐 Authentication & Security
 
-### Q: "Port already in use" error?
+Neko Master supports access authentication to protect dashboard data.
 
-**A:** See [Port Conflict Resolution](#-port-conflict-resolution) above. The simplest approach is to create a `.env` file with custom ports.
+### Production Security Baseline
 
-### Q: Cannot access after changing ports?
+1. Set a fixed `COOKIE_SECRET` (otherwise sessions may be invalidated after restart).
+2. Do not keep `FORCE_ACCESS_CONTROL_OFF=true` enabled in normal operation.
+3. Use `SHOWCASE_SITE_MODE=true` only for public demo environments (write operations are restricted).
 
-**A:** Make sure three things:
+Example:
 
-1. Ports are modified in `.env` file
-2. Service is restarted: `docker compose restart`
-3. You're using the new port (e.g., `http://localhost:8080`)
-
-### Q: Will upgrading break users who only expose `3000:3000`?
-
-**A:** No. Core functionality remains available.  
-If WS is not routed, the app automatically falls back to HTTP polling.
-
-### Q: If WS forwarding is not configured, will it affect usage?
-
-**A:** Core features and data display still work.  
-The difference is real-time experience: without WS, updates are polling-based (about every 5 seconds).
-
-### Q: Why do I see `/_next/static/... 426 Upgrade Required`?
-
-**A:** WS route matching is usually too broad and static assets are being forwarded to the WS port. Check:
-
-1. In Cloudflare Tunnel / Nginx, do not use `ws` as path; use `/_cm_ws*`
-2. WS route priority must be above `/*`
-3. If `NEXT_PUBLIC_WS_URL` is manually set, ensure it matches your proxy path (for example `/_cm_ws`)
-
-### Q: Failed to connect to OpenClash?
-
-**A:** Check the following:
-
-1. Is "External Control" enabled in OpenClash?
-2. Is the OpenClash address correct? (Format: `IP:Port`)
-3. If Secret is configured, is the Token correct?
-4. Can the container access OpenClash's network? (Check firewall settings)
-
-### Q: How to view service logs?
-
-**A:**
-
-```bash
-# View all logs
-docker logs -f neko-master
-
-# View last 100 lines
-docker logs --tail 100 neko-master
+```env
+COOKIE_SECRET=<at least 32-byte random string>
+# FORCE_ACCESS_CONTROL_OFF=false
+# SHOWCASE_SITE_MODE=false
 ```
 
-### Q: How to backup data?
+### Enable / Disable Authentication
 
-**A:** Data is stored in the mapped directory (default `./data/stats.db`):
+1. Open dashboard and click "Settings" in the lower-left sidebar.
+2. Go to the "Security" tab.
+3. Enable/disable access control and set your token.
+
+### Forgot Token (Emergency Reset)
+
+If you forgot the token, temporarily set `FORCE_ACCESS_CONTROL_OFF=true` to enter emergency mode.
+
+#### Docker Compose
+
+1. Add to `docker-compose.yml`:
+
+   ```yaml
+   environment:
+     - FORCE_ACCESS_CONTROL_OFF=true
+   ```
+
+2. Restart:
+
+   ```bash
+   docker compose up -d
+   ```
+
+3. Open dashboard and reset token in "Settings -> Security".
+4. Remove this env var immediately after reset, then restart again.
+
+#### Docker CLI
+
+1. Stop and remove container:
+
+   ```bash
+   docker stop neko-master
+   docker rm neko-master
+   ```
+
+2. Re-run with emergency flag:
+
+   ```bash
+   docker run -d \
+     --name neko-master \
+     -p 3000:3000 \
+     -v $(pwd)/data:/app/data \
+     -e FORCE_ACCESS_CONTROL_OFF=true \
+     foru17/neko-master:latest
+   ```
+
+3. Reset token, then remove this flag and restart normally.
+
+## ❓ FAQ
+
+### Q: Can I run normally with only `3000:3000` exposed?
+
+**A:** Yes. Core features still work.  
+If WS is not routed, the app automatically falls back to HTTP polling.  
+For full realtime experience, route `/_cm_ws` to `3002`.
+
+### Q: Port conflict or inaccessible after port changes?
+
+**A:** Create/update `.env` (same directory as `docker-compose.yml`):
+
+```env
+WEB_EXTERNAL_PORT=8080
+API_EXTERNAL_PORT=8081
+WS_EXTERNAL_PORT=8082
+```
+
+Then restart:
+
+```bash
+docker compose down
+docker compose up -d
+```
+
+### Q: Why does login/session disappear after restart?
+
+**A:** Usually because `COOKIE_SECRET` is not fixed or data directory is not persisted.
+
+1. Set a fixed `COOKIE_SECRET`
+2. Mount `./data:/app/data`
+
+### Q: Failed to connect OpenClash / gateway?
+
+**A:** Check:
+
+1. External control is enabled on gateway side
+2. Host/port is correct
+3. Token/Secret is correct (if configured)
+4. Container network can reach gateway
+
+### Q: How to backup and restore data?
+
+**A:** Backup first:
 
 ```bash
 cp -r ./data ./data-backup-$(date +%Y%m%d)
 ```
 
-### Q: How to clean up historical data?
+Restore:
 
-**A:**
+```bash
+docker compose down
+cp -r ./data-backup-YYYYMMDD/. ./data/
+docker compose up -d
+```
 
-1. Click "Settings" at the bottom of the left sidebar
-2. Switch to the "Database" tab
-3. Select cleanup range: 1 day / 7 days / 30 days / All
+## 🏗️ Architecture Guide
+
+If you want to quickly understand the system design depth, read in this order:
+
+1. **System Architecture Diagram**: end-to-end layering and module responsibilities  
+   Chinese: [`docs/architecture.md`](./docs/architecture.md)  
+   English: [`docs/architecture.en.md`](./docs/architecture.en.md)
+2. **Data Flow**: Clash / Surge collection pipelines and aggregation
+3. **Data Model & Storage**: SQLite schema, cache tables, retention
+4. **Realtime Channel Design**: `RealtimeStore` merge strategy and WS push
+
+> This documentation covers the core design of collection, aggregation, caching, realtime push, and multi-backend management.
+
+## 🤝 Feedback & Issues
+
+This project uses GitHub Issue Templates (Bug / Feature / Support).
+
+Please include at least:
+
+1. Deployment method (Compose / Docker Run / Source)
+2. Version info (image tag or commit)
+3. Key env vars (masked, e.g. `COOKIE_SECRET=***`)
+4. Reproduction steps and expected vs actual behavior
+5. Key logs (`docker logs`, browser console, network errors)
 
 ## 📁 Project Structure
 
@@ -491,6 +660,9 @@ neko-master/
 ├── setup.sh                # One-click setup script
 ├── docker-start.sh         # Docker container startup script
 ├── start.sh                # Source code dev startup script
+├── docs/                   # Architecture and design docs
+│   ├── architecture.md     # Chinese architecture docs
+│   └── architecture.en.md  # English architecture docs
 ├── assets/                 # Screenshots and icons
 ├── apps/
 │   ├── collector/          # Data collection service (Node.js + WebSocket)

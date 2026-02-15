@@ -17,8 +17,11 @@
   <a href="https://github.com/foru17/neko-master/stargazers"><img src="https://img.shields.io/github/stars/foru17/neko-master?style=flat-square&color=yellow" alt="Stars"></a>
   <a href="https://hub.docker.com/r/foru17/neko-master"><img src="https://img.shields.io/docker/pulls/foru17/neko-master?style=flat-square&color=blue&logo=docker" alt="Docker Pulls"></a>
   <a href="https://hub.docker.com/r/foru17/neko-master"><img src="https://img.shields.io/docker/v/foru17/neko-master?style=flat-square&label=Docker&color=2496ED" alt="Docker Version"></a>
+  <a href="https://hub.docker.com/r/foru17/neko-master"><img src="https://img.shields.io/docker/image-size/foru17/neko-master/latest?style=flat-square&logo=docker" alt="Image Size"></a>
   <a href="https://github.com/foru17/neko-master/blob/main/LICENSE"><img src="https://img.shields.io/github/license/foru17/neko-master?style=flat-square&color=green" alt="License"></a>
   <img src="https://img.shields.io/badge/Node.js-22-339933?style=flat-square&logo=node.js">
+  <a href="https://github.com/foru17/neko-master/actions/workflows/docker-build.yml"><img src="https://img.shields.io/github/actions/workflow/status/foru17/neko-master/docker-build.yml?style=flat-square&label=Docker%20CI" alt="Docker CI"></a>
+  <a href="./docs/architecture.md"><img src="https://img.shields.io/badge/docs-architecture-0ea5e9?style=flat-square" alt="Architecture Docs"></a>
 </p>
 
 > [!IMPORTANT]
@@ -32,9 +35,24 @@
 >
 > 本项目遵循 MIT 协议开源，不对因使用本软件产生的任何后果承担责任。请在合规范围内使用。
 
-![Neko Master Overview](./assets/neko-master-overview.png)
-![Neko Master Rules](./assets/neko-master-rules.png)
-![Neko Master Regions](./assets/neko-master-regions.png)
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="./assets/neko-master-overview-light.png" alt="Neko Master Preview (Light 1)" />
+    </td>
+    <td align="center" width="50%">
+      <img src="./assets/neko-master-regions-light.png" alt="Neko Master Preview (Light 2)" />
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="./assets/neko-master-rules-dark.png" alt="Neko Master Preview (Dark 1)" />
+    </td>
+    <td align="center" width="50%">
+      <img src="./assets/neko-master-domains-dark.png" alt="Neko Master Preview (Dark 2)" />
+    </td>
+  </tr>
+</table>
 
 ## 🌐 在线演示
 
@@ -58,7 +76,10 @@ Neko Master 专注于对网络流量进行轻量、精确的分析与可视化�
 - [🔧 端口冲突解决](#-端口冲突解决)
 - [🐳 Docker 配置](#-docker-配置)
 - [🌐 反向代理与 Tunnel](#-反向代理与-tunnel)
+- [🔐 认证与安全](#-认证与安全)
 - [❓ 常见问题](#-常见问题)
+- [🏗️ 架构文档指引](#️-架构文档指引)
+- [🤝 反馈与 Issue](#-反馈与-issue)
 - [📁 项目结构](#-项目结构)
 - [🛠️ 技术栈](#️-技术栈)
 - [📝 更新日志](./CHANGELOG.md)
@@ -67,6 +88,9 @@ Neko Master 专注于对网络流量进行轻量、精确的分析与可视化�
 ## 🚀 快速开始
 
 ### 方式一：Docker Compose（推荐）
+
+> 仓库内置的 `docker-compose.yml` 默认映射 `3000/3001/3002`。  
+> 下方场景 A/B 是更精简的常见部署模板，可按需选择。
 
 #### 场景 A：最简部署（仅暴露 3000）
 
@@ -83,7 +107,11 @@ services:
     environment:
       - NODE_ENV=production
       - DB_PATH=/app/data/stats.db
+      - COOKIE_SECRET=${COOKIE_SECRET}
 ```
+
+> 建议在 `docker-compose.yml` 同目录的 `.env` 中配置：  
+> `COOKIE_SECRET=<至少32字节随机字符串>`（可用 `openssl rand -hex 32` 生成）
 
 > 该模式完全兼容升级，页面可用。  
 > 未打通 WS 时会自动回退到 HTTP 轮询刷新。
@@ -104,6 +132,7 @@ services:
     environment:
       - NODE_ENV=production
       - DB_PATH=/app/data/stats.db
+      - COOKIE_SECRET=${COOKIE_SECRET}
 ```
 
 启动服务：
@@ -114,7 +143,14 @@ docker compose up -d
 
 访问 <http://localhost:3000>
 
+若你直接使用仓库内置 Compose 文件（默认暴露 `3000/3001/3002`），执行同一命令即可。
+
 ### 方式二：Docker 直接运行
+
+```bash
+# 建议先生成固定 Cookie 密钥（用于会话持久）
+export COOKIE_SECRET="$(openssl rand -hex 32)"
+```
 
 ```bash
 # 最简（仅 3000）
@@ -122,6 +158,7 @@ docker run -d \
   --name neko-master \
   -p 3000:3000 \
   -v $(pwd)/data:/app/data \
+  -e COOKIE_SECRET="$COOKIE_SECRET" \
   --restart unless-stopped \
   foru17/neko-master:latest
 
@@ -131,6 +168,7 @@ docker run -d \
   -p 3000:3000 \
   -p 3002:3002 \
   -v $(pwd)/data:/app/data \
+  -e COOKIE_SECRET="$COOKIE_SECRET" \
   --restart unless-stopped \
   foru17/neko-master:latest
 ```
@@ -140,8 +178,8 @@ docker run -d \
 
 访问 <http://localhost:3000>
 
-> 如需自定义外部端口（docker run），请额外传入：
-> `-e WEB_EXTERNAL_PORT=8080 -e API_EXTERNAL_PORT=8081 -e WS_EXTERNAL_PORT=8082`
+> `docker run` 修改外部端口时，直接改 `-p` 映射即可。  
+> 仅在“非反代直连 WS 且外部 WS 端口不是 3002”时，额外传入 `-e WS_EXTERNAL_PORT=<外部WS端口>`。
 
 ### 方式三：一键脚本
 
@@ -172,11 +210,18 @@ cd neko-master
 # 2. 安装依赖
 pnpm install
 
-# 3. 启动开发服务
+# 3. 准备 collector 环境变量（源码模式读取 apps/collector/.env）
+cp apps/collector/.env.example apps/collector/.env
+
+# 4. 启动开发服务
 pnpm dev
 ```
 
 访问 <http://localhost:3000>
+
+> 源码模式下：`collector` 默认监听 `3001/3002`，`web` 默认监听 `3000`。  
+> 如果你修改了 `API_PORT`（非 3001），请同步设置 `API_URL`（例如 `API_URL=http://localhost:4001`）供 web 的 `/api` 转发使用。  
+> `apps/collector/.env.local` 的优先级高于 `apps/collector/.env`。
 
 ## 📖 首次使用
 
@@ -246,6 +291,7 @@ http-api-web-dashboard = true
 WEB_EXTERNAL_PORT=8080    # 修改 Web UI 端口
 API_EXTERNAL_PORT=8081    # 修改 API 端口
 WS_EXTERNAL_PORT=8082     # 修改 WebSocket 外部端口（仅直连时需要）
+COOKIE_SECRET=your-long-random-secret   # 强烈建议固定
 ```
 
 然后重启：
@@ -265,7 +311,7 @@ ports:
   - "8082:3002" # 外部 8082 → 内部 3002（给反代/Tunnel 转发 WS）
 ```
 
-> 说明：前端会在运行时读取外部端口配置，无需再设置 `NEXT_PUBLIC_WS_PORT`。
+> 说明：如果你不走反代、直接让浏览器连 `ws://host:端口`，且外部 WS 端口不是 `3002`，请同时设置 `WS_EXTERNAL_PORT=<外部端口>`。
 
 ### 方案 3：使用一键脚本
 
@@ -282,28 +328,68 @@ curl -fsSL https://raw.githubusercontent.com/foru17/neko-master/main/setup.sh | 
 | 端口 |   用途    | 外部必需 | 说明                                             |
 | :--: | :-------: | :------: | :----------------------------------------------- |
 | 3000 | Web 界面  |    ✅    | 前端访问入口                                     |
-| 3001 | API 接口  |   可选   | 前端默认同域 `/api`，一般无需暴露                |
-| 3002 | WebSocket |   可选   | 实时推送端口，建议仅给反代层转发，不直接公网暴露 |
+| 3001 | API 接口  |   可选   | 前端默认同域 `/api`，一般无需公网暴露（仓库默认 Compose 会映射） |
+| 3002 | WebSocket |   可选   | 实时推送端口，建议仅给反代层转发，不直接公网暴露（仓库默认 Compose 会映射） |
 
-### 环境变量说明（Docker）
+### 环境变量说明（部署）
 
-| 变量名                | 默认值               | 作用                                       | 何时设置                  |
-| :-------------------- | :------------------- | :----------------------------------------- | :------------------------ |
-| `WEB_PORT`            | `3000`               | 前端服务监听端口（容器内）                 | 一般不用改                |
-| `API_PORT`            | `3001`               | API 服务监听端口（容器内）                 | 一般不用改                |
-| `COLLECTOR_WS_PORT`   | `3002`               | WS 服务监听端口（容器内）                  | 一般不用改                |
-| `DB_PATH`             | `/app/data/stats.db` | SQLite 数据文件路径                        | 自定义数据目录时          |
-| `WEB_EXTERNAL_PORT`   | `3000`               | 运行时注入给前端显示/拼接用的外部 Web 端口 | 外部映射端口变更时        |
-| `API_EXTERNAL_PORT`   | `3001`               | 运行时注入给前端的 API 外部端口            | 仅直连 API 时             |
-| `WS_EXTERNAL_PORT`    | `3002`               | 运行时注入给前端的 WS 外部端口             | 仅直连 WS 时              |
-| `NEXT_PUBLIC_API_URL` | 空                   | 强制前端 API 基地址（覆盖默认 `/api`）     | API 不走同域时            |
-| `NEXT_PUBLIC_WS_URL`  | 自动 `/_cm_ws`       | 自定义前端 WS 地址（覆盖默认）             | 仅在你想改默认路径/域名时 |
+| 变量名 | 默认值 | 作用 | 何时设置 |
+| :-- | :-- | :-- | :-- |
+| `WEB_PORT` | `3000` | Web 服务监听端口（容器内） | 一般不改 |
+| `API_PORT` | `3001` | API 服务监听端口（容器内） | 一般不改 |
+| `COLLECTOR_WS_PORT` | `3002` | WS 服务监听端口（容器内） | 一般不改 |
+| `DB_PATH` | `/app/data/stats.db` | SQLite 文件路径 | 自定义数据目录时 |
+| `WEB_EXTERNAL_PORT` | `3000` | `docker-compose.yml` 的 Web 外部端口映射 | 外部 Web 端口变更时 |
+| `API_EXTERNAL_PORT` | `3001` | `docker-compose.yml` 的 API 外部端口映射 | 需要外部直连 API 时 |
+| `WS_EXTERNAL_PORT` | `3002` | `docker-compose.yml` 的 WS 外部端口映射；同时用于前端直连 WS 端口推断 | 非反代直连 WS 且外部端口变化时 |
+| `NEXT_PUBLIC_API_URL` | 空 | 覆盖前端 API 基地址（如 `https://api.example.com`） | API 不走同域 `/api` 时 |
+| `NEXT_PUBLIC_WS_URL` | 空 | 覆盖前端 WS 地址（支持绝对 URL 或 `/custom_ws`） | WS 路径/域名自定义时 |
+| `NEXT_PUBLIC_WS_PORT` | `3002` | WS 直连端口兜底值（构建时注入） | 非反代直连 WS 且需显式指定端口时 |
+| `API_URL` | `http://localhost:3001` | Next.js `/api` rewrite 目标（主要用于源码/自构建） | 你修改了 API 实际监听地址时 |
+| `COOKIE_SECRET` | 自动生成 | Cookie 签名密钥；未固定时会自动生成（数据目录不持久化时重启后会话会失效） | 生产环境强烈建议固定配置 |
+| `FORCE_ACCESS_CONTROL_OFF` | `false` | 强制关闭访问控制（紧急恢复） | 仅忘记密码临时使用 |
+| `SHOWCASE_SITE_MODE` | `false` | 演示只读模式（禁用敏感写操作） | 仅公开演示站点 |
+
+### 高级调优变量（可选）
+
+| 变量名 | 默认值 | 说明 |
+| :-- | :-- | :-- |
+| `FLUSH_INTERVAL_MS` | `30000` | 采集缓冲区落库间隔 |
+| `FLUSH_MAX_BUFFER_SIZE` | `5000` | 采集缓冲区最大条目，达到即提前落库 |
+| `REALTIME_MAX_MINUTES` | `180` | 实时内存窗口大小（分钟） |
+| `REALTIME_RANGE_END_TOLERANCE_MS` | `120000` | 查询结束时间容差，缓解边界抖动 |
+| `SURGE_POLICY_SYNC_INTERVAL_MS` | `600000` | Surge 策略同步周期 |
+| `DB_RANGE_QUERY_CACHE_TTL_MS` | `8000` | 范围查询缓存 TTL |
+| `DB_HISTORICAL_QUERY_CACHE_TTL_MS` | `300000` | 历史查询缓存 TTL |
+| `DB_RANGE_QUERY_CACHE_MAX_ENTRIES` | `1024` | 范围查询缓存最大条目 |
+| `DB_RANGE_QUERY_CACHE_DISABLED` | 空 | 设为 `1` 可关闭范围查询缓存 |
+| `DEBUG_SURGE` | `false` | Surge 采集调试日志开关（`true` 开启） |
 
 ### API / WS 地址解析优先级
 
-1. API：`runtime-config(API_URL)` → `NEXT_PUBLIC_API_URL` → 默认同域 `/api`
-2. WS：`runtime-config(WS_URL)` → `NEXT_PUBLIC_WS_URL` → 自动推断
-3. 默认即使用同域 `/_cm_ws`，无需手动配置；仅在自定义路由时再设置 `NEXT_PUBLIC_WS_URL`
+1. API 客户端基址：`runtime-config.API_URL` → `NEXT_PUBLIC_API_URL` → 默认同域 `/api`
+2. `/api` 的服务端转发目标：`API_URL`（默认 `http://localhost:3001`，在 Next.js rewrite 中生效）
+3. WS URL：`runtime-config.WS_URL` → `NEXT_PUBLIC_WS_URL` → 自动候选（生产优先 `/_cm_ws`，失败再尝试直连端口）
+4. WS 端口：`runtime-config.WS_PORT`（来自 `WS_EXTERNAL_PORT`）→ `NEXT_PUBLIC_WS_PORT` → `3002`
+5. 默认部署下无需手动配置 `NEXT_PUBLIC_WS_URL`；仅当你自定义 WS 路径/域名时再设置
+
+### 线上环境建议（强烈）
+
+```env
+NODE_ENV=production
+DB_PATH=/app/data/stats.db
+COOKIE_SECRET=<至少32字节随机字符串>
+# 仅紧急恢复时临时开启，平时不要保留 true
+# FORCE_ACCESS_CONTROL_OFF=false
+```
+
+可使用 `openssl rand -hex 32` 生成 `COOKIE_SECRET`。
+
+补充建议：
+
+1. 挂载持久化目录（如 `./data:/app/data`），避免数据库与自动生成密钥丢失。
+2. 如果外部直连 WS 且端口非 `3002`，务必同步设置 `WS_EXTERNAL_PORT`。
+3. 若源码部署修改了 API 端口或地址，记得同步设置 `API_URL`。
 
 ## 🌐 反向代理与 Tunnel
 
@@ -383,6 +469,8 @@ cloudflared tunnel --config ~/.cloudflared/config.yml run <your-tunnel-name-or-i
 5. `beacon.min.js` 等第三方脚本失败通常不影响主数据链路（API/WS）
 6. 默认不需要单独配置 `/api` 反代：前端会同域访问 `/api` 并由应用内部转发到 `3001`
 
+> 说明：`/_next/static/... 426 Upgrade Required` 在 **反向代理 / Tunnel 配置错误** 时比较常见；本地直连（不经反代）通常不会遇到。
+
 ### 多架构支持
 
 Docker 镜像同时支持 `linux/amd64` 和 `linux/arm64`。
@@ -407,6 +495,20 @@ docker compose up -d
 ## 🔐 认证与安全
 
 Neko Master 支持访问鉴权功能，保护你的面板数据安全。
+
+### 生产环境安全基线
+
+1. 固定配置 `COOKIE_SECRET`（否则重启后会话可能失效）。
+2. 不要长期保留 `FORCE_ACCESS_CONTROL_OFF=true`。
+3. `SHOWCASE_SITE_MODE=true` 仅用于演示站点（会限制写操作）。
+
+示例：
+
+```env
+COOKIE_SECRET=<至少32字节随机字符串>
+# FORCE_ACCESS_CONTROL_OFF=false
+# SHOWCASE_SITE_MODE=false
+```
 
 ### 开启/关闭鉴权
 
@@ -461,37 +563,36 @@ Neko Master 支持访问鉴权功能，保护你的面板数据安全。
 
 ## ❓ 常见问题
 
-### Q: 提示 "端口已被占用" 怎么办？
+### Q: 只映射 `3000:3000` 可以正常使用吗？
 
-**A:** 参考上方[端口冲突解决](#-端口冲突解决)部分。最简单的方式是创建 `.env` 文件修改端口。
+**A:** 可以。页面功能仍可用，未打通 WS 时会自动回退为 HTTP 轮询。  
+如需完整实时能力，请按上文配置反代路径（如 `/_cm_ws`）并转发到 `3002`。
 
-### Q: 修改端口后无法访问？
+### Q: 端口冲突或改端口后无法访问怎么办？
 
-**A:** 确保三点：
+**A:** 先在项目根目录创建 `.env`（与 `docker-compose.yml` 同目录）：
 
-1. `.env` 文件中的端口已修改
-2. 重启了服务：`docker compose restart`
-3. 访问时使用了新端口（如 `http://localhost:8080`）
+```env
+WEB_EXTERNAL_PORT=8080
+API_EXTERNAL_PORT=8081
+WS_EXTERNAL_PORT=8082
+```
 
-### Q: 从旧版升级到 WebSocket 版，只映射 `3000:3000` 会不兼容吗？
+然后重启并用新端口访问：
 
-**A:** 不会。页面功能仍可用，未打通 WS 时会自动回退为 HTTP 轮询。  
-如需完整实时能力，请按上文配置反代路径（如 `/_cm_ws`）并将其转发到 `3002`。
+```bash
+docker compose down
+docker compose up -d
+```
 
-### Q: 如果没有配置 WS 的外部转发，会影响使用吗？
+### Q: 为什么重启后登录状态会失效？
 
-**A:** 不影响核心功能和数据展示。系统会自动回退到 HTTP 轮询刷新。  
-差异主要是实时体验：WS 模式更即时；未打通 WS 时刷新频率约为 5 秒级。
+**A:** 通常是 `COOKIE_SECRET` 未固定或数据目录未持久化导致。建议：
 
-### Q: 为什么会出现 `/_next/static/... 426 Upgrade Required`？
+1. 设置固定 `COOKIE_SECRET`
+2. 挂载 `./data:/app/data`
 
-**A:** 通常是 WS 路由匹配过宽，把静态资源误转发到 WS 端口了。请检查：
-
-1. Cloudflare Tunnel / Nginx 的 WS 路径不要写成 `ws`，应使用 `/_cm_ws*`
-2. WS 路由优先级必须高于 `/*`
-3. 若你手动设置了 `NEXT_PUBLIC_WS_URL`，需确保与反代路径一致（例如都为 `/_cm_ws`）
-
-### Q: 连接 OpenClash 失败？
+### Q: 连接 OpenClash / 网关失败？
 
 **A:** 检查以下几点：
 
@@ -500,33 +601,46 @@ Neko Master 支持访问鉴权功能，保护你的面板数据安全。
 3. 如果配置了 Secret，Token 是否填写正确
 4. 容器是否能访问到 OpenClash 所在网络
 
-### Q: 如何查看服务日志？
+### Q: 如何备份和恢复数据？
 
-**A:**
-
-```bash
-# 查看所有日志
-docker logs -f neko-master
-
-# 只看最后 100 行
-docker logs --tail 100 neko-master
-```
-
-### Q: 如何备份数据？
-
-**A:** 数据存储在映射的目录中（默认 `./data/stats.db`）：
+**A:** 数据默认在 `./data/stats.db`。先备份：
 
 ```bash
 cp -r ./data ./data-backup-$(date +%Y%m%d)
 ```
 
-### Q: 如何清理历史数据？
+恢复时停止服务、覆盖数据目录再启动：
 
-**A:**
+```bash
+docker compose down
+cp -r ./data-backup-YYYYMMDD/. ./data/
+docker compose up -d
+```
 
-1. 点击左侧边栏底部的「设置」
-2. 切换到「数据库」标签页
-3. 选择清理范围：1天前 / 7天前 / 30天前 / 全部
+## 🏗️ 架构文档指引
+
+如果你想快速理解系统设计与实现深度，建议按下面顺序阅读：
+
+1. **整体架构图**：端到端分层与模块职责  
+   中文：[`docs/architecture.md`](./docs/architecture.md)  
+   English: [`docs/architecture.en.md`](./docs/architecture.en.md)
+2. **数据流详解**：Clash / Surge 两条采集链路与聚合过程
+3. **数据模型与存储**：SQLite 表结构、缓存表、保留策略
+4. **实时通道设计**：`RealtimeStore` 合并策略与 WS 推送机制
+
+> 该文档覆盖采集、聚合、缓存、实时推送与多后端管理的核心设计。
+
+## 🤝 反馈与 Issue
+
+本项目已启用 GitHub Issue 模板（Bug / Feature / Support）。
+
+建议提单时至少包含：
+
+1. 部署方式（Compose / Docker Run / 源码）
+2. 版本信息（镜像 tag 或 commit）
+3. 关键环境变量（请脱敏，如 `COOKIE_SECRET=***`）
+4. 复现步骤与预期/实际结果
+5. 关键日志（`docker logs`、浏览器 Console、网络报错）
 
 ## 📁 项目结构
 
@@ -537,6 +651,9 @@ neko-master/
 ├── setup.sh                # 一键配置脚本
 ├── docker-start.sh         # Docker 容器启动脚本
 ├── start.sh                # 源码开发启动脚本
+├── docs/                   # 架构与设计文档
+│   ├── architecture.md     # 中文架构文档
+│   └── architecture.en.md  # 英文架构文档
 ├── assets/                 # 预览图和图标
 ├── apps/
 │   ├── collector/          # 数据收集服务（Node.js + WebSocket）
