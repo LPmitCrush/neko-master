@@ -3,6 +3,7 @@ export type TimePreset =
   | "5m"
   | "15m"
   | "30m"
+  | "1h"
   | "24h"
   | "7d"
   | "30d"
