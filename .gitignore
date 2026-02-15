@@ -23,6 +23,7 @@ out/
 *.db-shm
 *.sqlite
 *.sqlite3
+geoip/
 
 # Logs
 logs/

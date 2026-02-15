@@ -468,7 +468,9 @@ export const DEFAULT_APP_CONFIG = `
   INSERT OR IGNORE INTO app_config (key, value) VALUES 
     ('retention.connection_logs_days', '7'),
     ('retention.hourly_stats_days', '30'),
-    ('retention.auto_cleanup', '1');
+    ('retention.auto_cleanup', '1'),
+    ('geoip.lookup_provider', 'online'),
+    ('geoip.online_api_url', 'https://api.ipinfo.es/ipinfo');
 `;
 
 // Default auth config values

@@ -77,6 +77,15 @@ export async function createApp(options: AppOptions) {
     return statsService.resolveBackendId(backendId);
   };
 
+  const isValidHttpUrl = (value: string): boolean => {
+    try {
+      const url = new URL(value);
+      return url.protocol === 'http:' || url.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  };
+
   // ...
 
   // Helper to get headers for backend requests
@@ -257,6 +266,64 @@ export async function createApp(options: AppOptions) {
     });
 
     return { message: 'Retention configuration updated', config };
+  });
+
+  app.get('/api/db/geoip', async () => {
+    const current = db.getGeoLookupConfig() as {
+      provider?: 'online' | 'local';
+      localMmdbReady?: boolean;
+    };
+
+    // Auto-fallback persisted config: if local is selected but required MMDB files are gone,
+    // switch back to online to keep UI/state consistent with effective runtime behavior.
+    if (current.provider === 'local' && current.localMmdbReady === false) {
+      return db.updateGeoLookupConfig({ provider: 'online' });
+    }
+
+    return current;
+  });
+
+  app.put('/api/db/geoip', async (request, reply) => {
+    if (authService.isShowcaseMode()) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+
+    const body = request.body as {
+      provider?: 'online' | 'local';
+      onlineApiUrl?: string;
+    };
+
+    if (body.provider !== undefined && body.provider !== 'online' && body.provider !== 'local') {
+      return reply.status(400).send({ error: "provider must be 'online' or 'local'" });
+    }
+
+    if (body.onlineApiUrl !== undefined) {
+      const trimmed = body.onlineApiUrl.trim();
+      if (!trimmed || !isValidHttpUrl(trimmed)) {
+        return reply.status(400).send({ error: 'onlineApiUrl must be a valid http/https URL' });
+      }
+      body.onlineApiUrl = trimmed;
+    }
+
+    if (body.provider === 'local') {
+      const current = db.getGeoLookupConfig() as {
+        localMmdbReady?: boolean;
+        missingMmdbFiles?: string[];
+      };
+      if (!current.localMmdbReady) {
+        return reply.status(400).send({
+          error: 'Local MMDB is not ready. Missing required files.',
+          missingMmdbFiles: current.missingMmdbFiles || [],
+        });
+      }
+    }
+
+    const config = db.updateGeoLookupConfig({
+      provider: body.provider,
+      onlineApiUrl: body.onlineApiUrl,
+    });
+
+    return { message: 'GeoIP configuration updated', config };
   });
 
   // Compatibility routes: Gateway APIs

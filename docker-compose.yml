@@ -11,6 +11,7 @@ services:
       - "${WS_EXTERNAL_PORT:-3002}:3002"    # WebSocket
     volumes:
       - ./data:/app/data
+      - ./geoip:/app/data/geoip:ro
     environment:
       - NODE_ENV=production
       - WEB_PORT=3000
@@ -21,6 +22,9 @@ services:
       - API_EXTERNAL_PORT=${API_EXTERNAL_PORT:-3001}
       - WS_EXTERNAL_PORT=${WS_EXTERNAL_PORT:-3002}
       - DB_PATH=/app/data/stats.db
+      - COOKIE_SECRET=${COOKIE_SECRET:-}
+      - GEOIP_LOOKUP_PROVIDER=${GEOIP_LOOKUP_PROVIDER:-}
+      - GEOIP_ONLINE_API_URL=${GEOIP_ONLINE_API_URL:-}
     networks:
       - neko-master-network
     # 健康检查

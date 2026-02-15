@@ -56,14 +56,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn, formatBytes, formatNumber } from "@/lib/utils";
-import { api } from "@/lib/api";
+import { api, type GeoLookupConfig, type GeoLookupProvider } from "@/lib/api";
 import { toast } from "sonner";
 import { BackendVerifyAnimation } from "@/components/features/backend/backend-verify-animation";
 import { BackendListSkeleton } from "@/components/ui/insight-skeleton";
 import { useSettings, FaviconProvider, getFaviconUrl } from "@/lib/settings";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Separator } from "@/components/ui/separator";
 import { useAuthState, authKeys } from "@/lib/auth-queries";
 
 // Favicon Provider Preview Component
@@ -343,6 +342,14 @@ export function BackendConfigDialog({
     autoCleanup: true,
   });
   const [updatingRetention, setUpdatingRetention] = useState(false);
+  const [geoLookupConfig, setGeoLookupConfig] = useState<GeoLookupConfig>({
+    provider: "online",
+    mmdbDir: "/app/data/geoip",
+    onlineApiUrl: "https://api.ipinfo.es/ipinfo",
+    localMmdbReady: false,
+    missingMmdbFiles: [],
+  });
+  const [updatingGeoLookup, setUpdatingGeoLookup] = useState(false);
 
   // Alert Dialog States
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -421,6 +428,7 @@ export function BackendConfigDialog({
       loadBackends();
       loadDbStats();
       loadRetentionConfig();
+      loadGeoLookupConfig();
     }
   }, [open]);
 
@@ -457,6 +465,48 @@ export function BackendConfigDialog({
     } catch (error) {
       console.error("Failed to load retention config:", error);
     }
+  };
+
+  const loadGeoLookupConfig = async () => {
+    try {
+      const config = await api.getGeoLookupConfig();
+      setGeoLookupConfig(config);
+    } catch (error) {
+      console.error("Failed to load geo lookup config:", error);
+    }
+  };
+
+  const handleUpdateGeoLookupConfig = async (
+    updates: {
+      provider?: GeoLookupProvider;
+      onlineApiUrl?: string;
+    },
+  ) => {
+    try {
+      setUpdatingGeoLookup(true);
+      const result = await api.updateGeoLookupConfig(updates);
+      setGeoLookupConfig(result.config);
+      toast.success(t("geoLookupUpdated"));
+    } catch (error: any) {
+      toast.error(error.message || t("geoLookupUpdateFailed"));
+    } finally {
+      setUpdatingGeoLookup(false);
+    }
+  };
+
+  const handleGeoLookupProviderChange = (value: string) => {
+    const provider = value as GeoLookupProvider;
+    if (provider !== "online" && provider !== "local") return;
+    if (provider === "local" && !geoLookupConfig.localMmdbReady) {
+      const missing = geoLookupConfig.missingMmdbFiles.join(", ");
+      toast.error(
+        t("geoLookupLocalUnavailable", {
+          files: missing || "GeoLite2-City.mmdb, GeoLite2-ASN.mmdb",
+        }),
+      );
+      return;
+    }
+    handleUpdateGeoLookupConfig({ provider });
   };
 
   const handleUpdateRetention = async (
@@ -1384,6 +1434,63 @@ export function BackendConfigDialog({
                     }
                     t={t}
                   />
+                </div>
+
+                {/* GeoIP Lookup Provider */}
+                <div className="p-4 rounded-lg border bg-card space-y-4">
+                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                    <Radio className="w-4 h-4" />
+                    {t("geoLookupProvider")}
+                  </h4>
+                  <p className="text-sm text-muted-foreground">
+                    {t("geoLookupProviderDescription")}
+                  </p>
+
+                  <RadioGroup
+                    value={geoLookupConfig.provider}
+                    onValueChange={handleGeoLookupProviderChange}
+                    className="space-y-2"
+                    disabled={updatingGeoLookup || isShowcase}>
+                    <div className="flex items-center gap-2 rounded-md border p-3">
+                      <RadioGroupItem value="online" id="geo-provider-online" />
+                      <Label htmlFor="geo-provider-online" className="cursor-pointer">
+                        {t("geoLookupOnline")}
+                      </Label>
+                    </div>
+                    <div
+                      className={cn(
+                        "flex items-center gap-2 rounded-md border p-3",
+                        !geoLookupConfig.localMmdbReady &&
+                          "opacity-60 cursor-not-allowed",
+                      )}>
+                      <RadioGroupItem
+                        value="local"
+                        id="geo-provider-local"
+                        disabled={!geoLookupConfig.localMmdbReady}
+                      />
+                      <Label
+                        htmlFor="geo-provider-local"
+                        className={cn(
+                          "cursor-pointer",
+                          !geoLookupConfig.localMmdbReady && "cursor-not-allowed",
+                        )}>
+                        {t("geoLookupLocal")}
+                      </Label>
+                    </div>
+                  </RadioGroup>
+
+                  <p className="text-xs text-muted-foreground">
+                    {t("geoLookupFixedPathHint")}
+                  </p>
+                  {!geoLookupConfig.localMmdbReady && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                      {t("geoLookupLocalUnavailable", {
+                        files:
+                          geoLookupConfig.missingMmdbFiles.join(", ") ||
+                          "GeoLite2-City.mmdb, GeoLite2-ASN.mmdb",
+                      })}
+                    </p>
+                  )}
                 </div>
               </div>
             ) : activeTab === "security" ? (

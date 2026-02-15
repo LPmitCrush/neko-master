@@ -171,6 +171,16 @@ export interface GatewayRulesResponse {
   _availablePolicies?: string[];
 }
 
+export type GeoLookupProvider = "online" | "local";
+
+export interface GeoLookupConfig {
+  provider: GeoLookupProvider;
+  mmdbDir: string;
+  onlineApiUrl: string;
+  localMmdbReady: boolean;
+  missingMmdbFiles: string[];
+}
+
 const DEFAULT_DB_STATS = {
   size: 0,
   totalConnectionsCount: 0,
@@ -181,6 +191,14 @@ const DEFAULT_RETENTION_CONFIG = {
   hourlyStatsDays: 30,
   autoCleanup: true,
 } as const;
+
+const DEFAULT_GEO_LOOKUP_CONFIG: GeoLookupConfig = {
+  provider: "online",
+  mmdbDir: "geoip",
+  onlineApiUrl: "https://api.ipinfo.es/ipinfo",
+  localMmdbReady: false,
+  missingMmdbFiles: [],
+};
 
 function buildUrl(base: string, params: Record<string, string | number | undefined>): string {
   // Use simple URL construction for client-side relative URLs
@@ -553,6 +571,22 @@ export const api = {
 
   updateRetentionConfig: (config: { connectionLogsDays: number; hourlyStatsDays: number; autoCleanup?: boolean }) =>
     fetchJson<{ message: string }>(`${API_BASE}/db/retention`, 'PUT', config),
+
+  getGeoLookupConfig: async () => {
+    try {
+      return await fetchJson<GeoLookupConfig>(`${API_BASE}/db/geoip`);
+    } catch (error) {
+      if (isApiStatus(error, 404)) {
+        return { ...DEFAULT_GEO_LOOKUP_CONFIG };
+      }
+      throw error;
+    }
+  },
+
+  updateGeoLookupConfig: (
+    config: { provider?: GeoLookupProvider; onlineApiUrl?: string },
+  ) =>
+    fetchJson<{ message: string; config: GeoLookupConfig }>(`${API_BASE}/db/geoip`, 'PUT', config),
 
   // Auth management
   getAuthState: () =>

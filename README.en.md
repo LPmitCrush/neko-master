@@ -112,6 +112,8 @@ services:
       - "3000:3000" # Web UI
     volumes:
       - ./data:/app/data
+      # Local MMDB (optional, files should be downloaded into ./geoip)
+      - ./geoip:/app/data/geoip:ro
     environment:
       - NODE_ENV=production
       - DB_PATH=/app/data/stats.db
@@ -137,6 +139,8 @@ services:
       - "3002:3002" # WebSocket (for Nginx / Tunnel forwarding)
     volumes:
       - ./data:/app/data
+      # Local MMDB (optional, files should be downloaded into ./geoip)
+      - ./geoip:/app/data/geoip:ro
     environment:
       - NODE_ENV=production
       - DB_PATH=/app/data/stats.db
@@ -188,6 +192,9 @@ Open <http://localhost:3000> to get started.
 
 > For `docker run`, change external ports using `-p` mappings directly.  
 > Only if you use direct WS access (no reverse proxy) and external WS port is not `3002`, also pass `-e WS_EXTERNAL_PORT=<external-ws-port>`.
+>
+> Local MMDB lookup mode (optional): mount `-v $(pwd)/geoip:/app/data/geoip:ro`,
+> then switch source to Local in `Settings -> Preferences -> IP Lookup Source`.
 
 ### Option 3: One-Click Script
 
@@ -356,6 +363,8 @@ The script will automatically detect and suggest available ports.
 | `NEXT_PUBLIC_WS_PORT` | `3002` | WS direct-connection fallback port (build-time exposed) | Direct WS mode needs explicit port |
 | `API_URL` | `http://localhost:3001` | Next.js `/api` rewrite target (mainly source/custom builds) | API listen address changed |
 | `COOKIE_SECRET` | auto-generated | Cookie signing secret; if not fixed, sessions can be invalidated after restart when data dir is not persisted | Strongly recommended in production |
+| `GEOIP_LOOKUP_PROVIDER` | `online` | IP geolocation source (`online` / `local`) | Default to local MMDB lookup |
+| `GEOIP_ONLINE_API_URL` | `https://api.ipinfo.es/ipinfo` | Online IP geolocation API endpoint (must be compatible with `ipinfo.my` response schema) | Set only when you deploy a compatible endpoint |
 | `FORCE_ACCESS_CONTROL_OFF` | `false` | Force disable access control (emergency recovery) | Temporary use only when token is lost |
 | `SHOWCASE_SITE_MODE` | `false` | Read-only showcase mode (blocks sensitive write operations) | Public demo sites only |
 
@@ -388,6 +397,8 @@ The script will automatically detect and suggest available ports.
 NODE_ENV=production
 DB_PATH=/app/data/stats.db
 COOKIE_SECRET=<at least 32-byte random string>
+# Optional: default to local MMDB lookup
+# GEOIP_LOOKUP_PROVIDER=local
 # Keep false in normal operation
 # FORCE_ACCESS_CONTROL_OFF=false
 ```
@@ -399,6 +410,10 @@ Additional recommendations:
 1. Mount persistent storage (for example `./data:/app/data`) to avoid data and secret loss.
 2. If using direct WS access and external WS port is not `3002`, set `WS_EXTERNAL_PORT` accordingly.
 3. If API port/address changes in source deployment, update `API_URL` as well.
+4. For local MMDB lookup, mount `./geoip:/app/data/geoip:ro` and switch source in `Settings -> Preferences -> IP Lookup Source`.
+5. MMDB files are large and are not bundled in the image. Download and place them in `./geoip` with fixed names:
+   `GeoLite2-City.mmdb`, `GeoLite2-ASN.mmdb` (required), and `GeoLite2-Country.mmdb` (optional).
+   Recommended source: <https://github.com/P3TERX/GeoLite.mmdb>.
 
 ## 🌐 Reverse Proxy & Tunnel
 
@@ -600,6 +615,18 @@ docker compose up -d
 
 1. Set a fixed `COOKIE_SECRET`
 2. Mount `./data:/app/data`
+
+### Q: Which files are required for local MMDB lookup?
+
+**A:** Create `./geoip` in your project directory (same level as `docker-compose.yml` is recommended), then place:
+
+1. `GeoLite2-City.mmdb` (required)
+2. `GeoLite2-ASN.mmdb` (required)
+3. `GeoLite2-Country.mmdb` (optional)
+
+Recommended source: <https://github.com/P3TERX/GeoLite.mmdb>.  
+Inside the container, the fixed lookup path is `/app/data/geoip`, so keep:
+`./geoip:/app/data/geoip:ro`. To update later, just replace files in host `./geoip`.
 
 ### Q: Failed to connect OpenClash / gateway?
 

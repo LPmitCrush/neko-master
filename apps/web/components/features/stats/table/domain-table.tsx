@@ -12,6 +12,7 @@ import { DomainPreview } from "@/components/features/domains/domain-preview";
 import { DomainExpandedDetails } from "@/components/features/stats/table/expanded-details";
 import { ProxyChainBadge } from "@/components/features/proxies/proxy-chain-badge";
 import { ExpandReveal } from "@/components/ui/expand-reveal";
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { formatBytes, formatNumber, formatDuration } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import type { DomainStats, StatsSummary } from "@neko-master/shared";
@@ -83,6 +84,8 @@ export function DomainsTable({
     setInternalPageSize(size);
   }, [onPageSizeChange]);
   const [expandedDomain, setExpandedDomain] = useState<string | null>(null);
+  const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false);
+  const [mobileDetailDomain, setMobileDetailDomain] = useState<DomainStats | null>(null);
   const [wsDomainsPage, setWsDomainsPage] = useState<DomainsPageState | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pageOffset = (currentPage - 1) * pageSize;
@@ -171,39 +174,44 @@ export function DomainsTable({
   const data = hasWsDomainsPage ? wsDomainsPage!.data : domainsQuery.data?.data ?? [];
   const total = hasWsDomainsPage ? wsDomainsPage!.total : domainsQuery.data?.total ?? 0;
   const loading = !hasWsDomainsPage && domainsQuery.isLoading && !domainsQuery.data;
+  const detailDomainKey = mobileDetailsOpen
+    ? (mobileDetailDomain?.domain ?? null)
+    : expandedDomain;
 
   useEffect(() => {
     // Backend switch means a different data universe, collapse safely.
     setExpandedDomain(null);
+    setMobileDetailsOpen(false);
+    setMobileDetailDomain(null);
   }, [activeBackendId]);
 
   const expandedDomainProxyQuery = useQuery({
-    queryKey: getDomainProxyStatsQueryKey(expandedDomain, activeBackendId, detailTimeRange),
-    queryFn: () => api.getDomainProxyStats(expandedDomain!, activeBackendId, detailTimeRange),
-    enabled: !!activeBackendId && !!expandedDomain,
+    queryKey: getDomainProxyStatsQueryKey(detailDomainKey, activeBackendId, detailTimeRange),
+    queryFn: () => api.getDomainProxyStats(detailDomainKey!, activeBackendId, detailTimeRange),
+    enabled: !!activeBackendId && !!detailDomainKey,
     staleTime: DETAIL_QUERY_STALE_MS,
     placeholderData: (previousData, previousQuery) => {
       const prevKey = (previousQuery?.queryKey?.[2] ?? null) as
         | { domain?: string; backendId?: number | null }
         | null;
       if (!prevKey) return undefined;
-      if (prevKey.domain !== (expandedDomain ?? "")) return undefined;
+      if (prevKey.domain !== (detailDomainKey ?? "")) return undefined;
       if (prevKey.backendId !== (activeBackendId ?? null)) return undefined;
       return previousData;
     },
   });
 
   const expandedDomainIPDetailsQuery = useQuery({
-    queryKey: getDomainIPDetailsQueryKey(expandedDomain, activeBackendId, detailTimeRange),
-    queryFn: () => api.getDomainIPDetails(expandedDomain!, activeBackendId, detailTimeRange),
-    enabled: !!activeBackendId && !!expandedDomain,
+    queryKey: getDomainIPDetailsQueryKey(detailDomainKey, activeBackendId, detailTimeRange),
+    queryFn: () => api.getDomainIPDetails(detailDomainKey!, activeBackendId, detailTimeRange),
+    enabled: !!activeBackendId && !!detailDomainKey,
     staleTime: DETAIL_QUERY_STALE_MS,
     placeholderData: (previousData, previousQuery) => {
       const prevKey = (previousQuery?.queryKey?.[2] ?? null) as
         | { domain?: string; backendId?: number | null }
         | null;
       if (!prevKey) return undefined;
-      if (prevKey.domain !== (expandedDomain ?? "")) return undefined;
+      if (prevKey.domain !== (detailDomainKey ?? "")) return undefined;
       if (prevKey.backendId !== (activeBackendId ?? null)) return undefined;
       return previousData;
     },
@@ -233,6 +241,18 @@ export function DomainsTable({
   const toggleExpand = (domain: string) => {
     const newExpanded = expandedDomain === domain ? null : domain;
     setExpandedDomain(newExpanded);
+  };
+
+  const openMobileDetails = (domain: DomainStats) => {
+    setMobileDetailDomain(domain);
+    setMobileDetailsOpen(true);
+  };
+
+  const handleMobileDetailsOpenChange = (open: boolean) => {
+    setMobileDetailsOpen(open);
+    if (!open) {
+      setMobileDetailDomain(null);
+    }
   };
 
   const SortIcon = ({ column }: { column: SortKey }) => {
@@ -371,7 +391,9 @@ export function DomainsTable({
           </div>
         ) : (
           data.map((domain, index) => {
-            const isExpanded = expandedDomain === domain.domain;
+            const isDesktopExpanded = expandedDomain === domain.domain;
+            const isMobileActive =
+              mobileDetailsOpen && mobileDetailDomain?.domain === domain.domain;
 
             return (
               <div key={domain.domain} className="group">
@@ -379,7 +401,7 @@ export function DomainsTable({
                 <div
                   className={cn(
                     "hidden sm:grid grid-cols-12 gap-3 px-5 py-4 items-center hover:bg-secondary/20 transition-colors cursor-pointer min-w-0",
-                    isExpanded && "bg-secondary/10"
+                    isDesktopExpanded && "bg-secondary/10"
                   )}
                   style={{ animationDelay: `${index * 50}ms` }}
                   onClick={() => toggleExpand(domain.domain)}
@@ -433,7 +455,7 @@ export function DomainsTable({
                       size="sm"
                       className={cn(
                         "h-7 px-2 gap-1 text-xs font-medium transition-all",
-                        isExpanded
+                        isDesktopExpanded
                           ? "bg-primary/10 text-primary hover:bg-primary/20"
                           : "bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary"
                       )}
@@ -444,7 +466,7 @@ export function DomainsTable({
                     >
                       <Server className="h-3 w-3" />
                       {domain.ips.length}
-                      {isExpanded ? (
+                      {isDesktopExpanded ? (
                         <ChevronUp className="h-3 w-3 ml-0.5" />
                       ) : (
                         <ChevronDown className="h-3 w-3 ml-0.5" />
@@ -457,9 +479,9 @@ export function DomainsTable({
                 <div
                   className={cn(
                     "sm:hidden px-4 py-3 hover:bg-secondary/20 transition-colors cursor-pointer",
-                    isExpanded && "bg-secondary/10"
+                    isMobileActive && "bg-secondary/10"
                   )}
-                  onClick={() => toggleExpand(domain.domain)}
+                  onClick={() => openMobileDetails(domain)}
                 >
                   {/* Row 1: Favicon + Domain (truncate) + IP Count */}
                   <div className="flex items-center gap-2.5 mb-2">
@@ -477,18 +499,18 @@ export function DomainsTable({
                       size="sm"
                       className={cn(
                         "h-7 px-2 gap-1 text-xs font-medium shrink-0",
-                        isExpanded
+                        isMobileActive
                           ? "bg-primary/10 text-primary"
                           : "bg-secondary/50 text-muted-foreground"
                       )}
                       onClick={(e) => {
                         e.stopPropagation();
-                        toggleExpand(domain.domain);
+                        openMobileDetails(domain);
                       }}
                     >
                       <Server className="h-3 w-3" />
                       {domain.ips.length}
-                      {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                      {isMobileActive ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                     </Button>
                   </div>
 
@@ -510,33 +532,70 @@ export function DomainsTable({
                 </div>
 
                 {/* Expanded Details: Proxy Traffic + IP List */}
-                {isExpanded && (
-                  <ExpandReveal>
-                    <DomainExpandedDetails
-                      domain={domain}
-                      proxyStats={expandedDomainProxyQuery.data ?? []}
-                      proxyStatsLoading={
-                        expandedDomainProxyQuery.isLoading &&
-                        !expandedDomainProxyQuery.data
-                      }
-                      ipDetails={expandedDomainIPDetailsQuery.data ?? []}
-                      ipDetailsLoading={
-                        expandedDomainIPDetailsQuery.isLoading &&
-                        !expandedDomainIPDetailsQuery.data
-                      }
-                    labels={{
-                      proxyTraffic: t("proxyTraffic"),
-                      associatedIPs: t("associatedIPs"),
-                      conn: t("conn"),
-                    }}
-                  />
-                  </ExpandReveal>
+                {isDesktopExpanded && (
+                  <div className="hidden sm:block">
+                    <ExpandReveal>
+                      <DomainExpandedDetails
+                        domain={domain}
+                        proxyStats={expandedDomainProxyQuery.data ?? []}
+                        proxyStatsLoading={
+                          expandedDomainProxyQuery.isLoading &&
+                          !expandedDomainProxyQuery.data
+                        }
+                        ipDetails={expandedDomainIPDetailsQuery.data ?? []}
+                        ipDetailsLoading={
+                          expandedDomainIPDetailsQuery.isLoading &&
+                          !expandedDomainIPDetailsQuery.data
+                        }
+                      labels={{
+                        proxyTraffic: t("proxyTraffic"),
+                        associatedIPs: t("associatedIPs"),
+                        conn: t("conn"),
+                      }}
+                    />
+                    </ExpandReveal>
+                  </div>
                 )}
               </div>
             );
           })
         )}
       </div>
+
+      <Drawer open={mobileDetailsOpen} onOpenChange={handleMobileDetailsOpenChange}>
+        <DrawerContent className="sm:hidden">
+          <DrawerHeader className="border-b border-border/60 bg-background/95 px-5 pt-2 pb-2.5">
+            <div className="flex items-center gap-2.5 min-w-0 rounded-md border border-border/60 bg-muted/25 px-2.5 py-2">
+              <Favicon domain={mobileDetailDomain?.domain || ""} size="sm" className="shrink-0" />
+              <DrawerTitle className="truncate text-left text-[15px] font-semibold leading-6">
+                {mobileDetailDomain?.domain || t("unknown")}
+              </DrawerTitle>
+            </div>
+          </DrawerHeader>
+          <div className="max-h-[76vh] overflow-y-auto pb-[max(env(safe-area-inset-bottom),0px)]">
+            {mobileDetailDomain ? (
+              <DomainExpandedDetails
+                domain={mobileDetailDomain}
+                proxyStats={expandedDomainProxyQuery.data ?? []}
+                proxyStatsLoading={
+                  expandedDomainProxyQuery.isLoading &&
+                  !expandedDomainProxyQuery.data
+                }
+                ipDetails={expandedDomainIPDetailsQuery.data ?? []}
+                ipDetailsLoading={
+                  expandedDomainIPDetailsQuery.isLoading &&
+                  !expandedDomainIPDetailsQuery.data
+                }
+                labels={{
+                  proxyTraffic: t("proxyTraffic"),
+                  associatedIPs: t("associatedIPs"),
+                  conn: t("conn"),
+                }}
+              />
+            ) : null}
+          </div>
+        </DrawerContent>
+      </Drawer>
 
       {/* Pagination Footer */}
       {totalPages > 0 && (

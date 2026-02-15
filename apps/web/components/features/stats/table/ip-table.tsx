@@ -25,7 +25,9 @@ import { formatBytes, formatNumber } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { IPExpandedDetails } from "@/components/features/stats/table/expanded-details";
 import { ProxyChainBadge } from "@/components/features/proxies/proxy-chain-badge";
+import { IPPreview } from "@/components/features/stats/table/ip-preview";
 import { ExpandReveal } from "@/components/ui/expand-reveal";
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import type { IPStats, StatsSummary } from "@neko-master/shared";
 import { api, type TimeRange } from "@/lib/api";
 import { useStableTimeRange } from "@/lib/hooks/use-stable-time-range";
@@ -121,6 +123,8 @@ export function IPsTable({
     setInternalPageSize(size);
   }, [onPageSizeChange]);
   const [expandedIP, setExpandedIP] = useState<string | null>(null);
+  const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false);
+  const [mobileDetailIP, setMobileDetailIP] = useState<IPStats | null>(null);
   const [wsIPsPage, setWsIPsPage] = useState<IPsPageState | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pageOffset = (currentPage - 1) * pageSize;
@@ -211,39 +215,42 @@ export function IPsTable({
   const data = hasWsIPsPage ? wsIPsPage!.data : ipsQuery.data?.data ?? [];
   const total = hasWsIPsPage ? wsIPsPage!.total : ipsQuery.data?.total ?? 0;
   const loading = !hasWsIPsPage && ipsQuery.isLoading && !ipsQuery.data;
+  const detailIPKey = mobileDetailsOpen ? (mobileDetailIP?.ip ?? null) : expandedIP;
 
   useEffect(() => {
     // Backend switch means a different data universe, collapse safely.
     setExpandedIP(null);
+    setMobileDetailsOpen(false);
+    setMobileDetailIP(null);
   }, [activeBackendId]);
 
   const expandedIPProxyQuery = useQuery({
-    queryKey: getIPProxyStatsQueryKey(expandedIP, activeBackendId, detailTimeRange),
-    queryFn: () => api.getIPProxyStats(expandedIP!, activeBackendId, detailTimeRange),
-    enabled: !!activeBackendId && !!expandedIP,
+    queryKey: getIPProxyStatsQueryKey(detailIPKey, activeBackendId, detailTimeRange),
+    queryFn: () => api.getIPProxyStats(detailIPKey!, activeBackendId, detailTimeRange),
+    enabled: !!activeBackendId && !!detailIPKey,
     staleTime: DETAIL_QUERY_STALE_MS,
     placeholderData: (previousData, previousQuery) => {
       const prevKey = (previousQuery?.queryKey?.[2] ?? null) as
         | { ip?: string; backendId?: number | null }
         | null;
       if (!prevKey) return undefined;
-      if (prevKey.ip !== (expandedIP ?? "")) return undefined;
+      if (prevKey.ip !== (detailIPKey ?? "")) return undefined;
       if (prevKey.backendId !== (activeBackendId ?? null)) return undefined;
       return previousData;
     },
   });
 
   const expandedIPDomainDetailsQuery = useQuery({
-    queryKey: getIPDomainDetailsQueryKey(expandedIP, activeBackendId, detailTimeRange),
-    queryFn: () => api.getIPDomainDetails(expandedIP!, activeBackendId, detailTimeRange),
-    enabled: !!activeBackendId && !!expandedIP,
+    queryKey: getIPDomainDetailsQueryKey(detailIPKey, activeBackendId, detailTimeRange),
+    queryFn: () => api.getIPDomainDetails(detailIPKey!, activeBackendId, detailTimeRange),
+    enabled: !!activeBackendId && !!detailIPKey,
     staleTime: DETAIL_QUERY_STALE_MS,
     placeholderData: (previousData, previousQuery) => {
       const prevKey = (previousQuery?.queryKey?.[2] ?? null) as
         | { ip?: string; backendId?: number | null }
         | null;
       if (!prevKey) return undefined;
-      if (prevKey.ip !== (expandedIP ?? "")) return undefined;
+      if (prevKey.ip !== (detailIPKey ?? "")) return undefined;
       if (prevKey.backendId !== (activeBackendId ?? null)) return undefined;
       return previousData;
     },
@@ -273,6 +280,18 @@ export function IPsTable({
   const toggleExpand = (ip: string) => {
     const newExpanded = expandedIP === ip ? null : ip;
     setExpandedIP(newExpanded);
+  };
+
+  const openMobileDetails = (ip: IPStats) => {
+    setMobileDetailIP(ip);
+    setMobileDetailsOpen(true);
+  };
+
+  const handleMobileDetailsOpenChange = (open: boolean) => {
+    setMobileDetailsOpen(open);
+    if (!open) {
+      setMobileDetailIP(null);
+    }
   };
 
   const SortIcon = ({ column }: { column: SortKey }) => {
@@ -407,7 +426,8 @@ export function IPsTable({
         ) : (
           data.map((ip, index) => {
             const ipColor = getIPColor(ip.ip);
-            const isExpanded = expandedIP === ip.ip;
+            const isDesktopExpanded = expandedIP === ip.ip;
+            const isMobileActive = mobileDetailsOpen && mobileDetailIP?.ip === ip.ip;
 
             return (
               <div key={ip.ip} className="group">
@@ -415,7 +435,7 @@ export function IPsTable({
                 <div
                   className={cn(
                     "hidden sm:grid grid-cols-12 gap-3 px-5 py-4 items-center hover:bg-secondary/20 transition-colors cursor-pointer min-w-0",
-                    isExpanded && "bg-secondary/10",
+                    isDesktopExpanded && "bg-secondary/10",
                   )}
                   style={{ animationDelay: `${index * 50}ms` }}
                   onClick={() => toggleExpand(ip.ip)}>
@@ -425,11 +445,21 @@ export function IPsTable({
                       className={`w-5 h-5 rounded-md ${ipColor.bg} ${ipColor.text} flex items-center justify-center shrink-0`}>
                       <Server className="w-3 h-3" />
                     </div>
-                    <div className="min-w-0">
-                      <code className="text-sm font-medium truncate block">
-                        {ip.ip}
-                      </code>
-                    </div>
+                    <IPPreview
+                      ip={ip.ip}
+                      geoIP={ip.geoIP}
+                      asn={ip.asn}
+                      unknownLabel={t("unknownIP")}
+                      unavailableLabel={t("unknown")}
+                      copyLabel={t("copyIP")}
+                      copiedLabel={t("copied")}
+                      locationLabel={t("location")}
+                      cityLabel={t("city")}
+                      asnLabel={t("asn")}
+                      asOrganizationLabel={t("asOrganization")}
+                      className="flex-1"
+                      triggerClassName="font-mono font-medium"
+                    />
                   </div>
 
                   {/* Proxy */}
@@ -479,7 +509,7 @@ export function IPsTable({
                       size="sm"
                       className={cn(
                         "h-7 px-2 gap-1 text-xs font-medium transition-all",
-                        isExpanded
+                        isDesktopExpanded
                           ? "bg-primary/10 text-primary hover:bg-primary/20"
                           : "bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary",
                       )}
@@ -489,7 +519,7 @@ export function IPsTable({
                       }}>
                       <Link2 className="h-3 w-3" />
                       {ip.domains.length}
-                      {isExpanded ? (
+                      {isDesktopExpanded ? (
                         <ChevronUp className="h-3 w-3 ml-0.5" />
                       ) : (
                         <ChevronDown className="h-3 w-3 ml-0.5" />
@@ -502,9 +532,9 @@ export function IPsTable({
                 <div
                   className={cn(
                     "sm:hidden px-4 py-3 hover:bg-secondary/20 transition-colors cursor-pointer",
-                    isExpanded && "bg-secondary/10",
+                    isMobileActive && "bg-secondary/10",
                   )}
-                  onClick={() => toggleExpand(ip.ip)}>
+                  onClick={() => openMobileDetails(ip)}>
                   {/* Row 1: IP Icon + IP (truncate) + Domain Count */}
                   <div className="flex items-center gap-2.5 mb-2">
                     <div
@@ -512,26 +542,37 @@ export function IPsTable({
                       <Server className="w-3 h-3" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <code className="text-sm font-medium truncate block">
-                        {ip.ip}
-                      </code>
+                      <IPPreview
+                        ip={ip.ip}
+                        geoIP={ip.geoIP}
+                        asn={ip.asn}
+                        unknownLabel={t("unknownIP")}
+                        unavailableLabel={t("unknown")}
+                        copyLabel={t("copyIP")}
+                        copiedLabel={t("copied")}
+                        locationLabel={t("location")}
+                        cityLabel={t("city")}
+                        asnLabel={t("asn")}
+                        asOrganizationLabel={t("asOrganization")}
+                        triggerClassName="font-mono font-medium"
+                      />
                     </div>
                     <Button
                       variant="ghost"
                       size="sm"
                       className={cn(
                         "h-7 px-2 gap-1 text-xs font-medium shrink-0",
-                        isExpanded
+                        isMobileActive
                           ? "bg-primary/10 text-primary"
                           : "bg-secondary/50 text-muted-foreground",
                       )}
                       onClick={(e) => {
                         e.stopPropagation();
-                        toggleExpand(ip.ip);
+                        openMobileDetails(ip);
                       }}>
                       <Link2 className="h-3 w-3" />
                       {ip.domains.length}
-                      {isExpanded ? (
+                      {isMobileActive ? (
                         <ChevronUp className="h-3 w-3" />
                       ) : (
                         <ChevronDown className="h-3 w-3" />
@@ -569,34 +610,69 @@ export function IPsTable({
                 </div>
 
                 {/* Expanded Details: Proxy Traffic + Domains List */}
-                {isExpanded && (
-                  <ExpandReveal>
-                    <IPExpandedDetails
-                      ip={ip}
-                      proxyStats={expandedIPProxyQuery.data ?? []}
-                      proxyStatsLoading={
-                        expandedIPProxyQuery.isLoading &&
-                        !expandedIPProxyQuery.data
-                      }
-                      domainDetails={expandedIPDomainDetailsQuery.data ?? []}
-                      domainDetailsLoading={
-                        expandedIPDomainDetailsQuery.isLoading &&
-                        !expandedIPDomainDetailsQuery.data
-                      }
-                    associatedDomainsIcon="link"
-                    labels={{
-                      proxyTraffic: t("proxyTraffic"),
-                      associatedDomains: t("associatedDomains"),
-                      conn: t("conn"),
-                    }}
-                  />
-                  </ExpandReveal>
+                {isDesktopExpanded && (
+                  <div className="hidden sm:block">
+                    <ExpandReveal>
+                      <IPExpandedDetails
+                        ip={ip}
+                        proxyStats={expandedIPProxyQuery.data ?? []}
+                        proxyStatsLoading={
+                          expandedIPProxyQuery.isLoading &&
+                          !expandedIPProxyQuery.data
+                        }
+                        domainDetails={expandedIPDomainDetailsQuery.data ?? []}
+                        domainDetailsLoading={
+                          expandedIPDomainDetailsQuery.isLoading &&
+                          !expandedIPDomainDetailsQuery.data
+                        }
+                      associatedDomainsIcon="link"
+                      labels={{
+                        proxyTraffic: t("proxyTraffic"),
+                        associatedDomains: t("associatedDomains"),
+                        conn: t("conn"),
+                      }}
+                    />
+                    </ExpandReveal>
+                  </div>
                 )}
               </div>
             );
           })
         )}
       </div>
+
+      <Drawer open={mobileDetailsOpen} onOpenChange={handleMobileDetailsOpenChange}>
+        <DrawerContent className="sm:hidden">
+          <DrawerHeader className="border-b border-border/60 px-4 py-2">
+            <DrawerTitle className="truncate text-left text-sm font-semibold">
+              {mobileDetailIP?.ip || t("unknownIP")}
+            </DrawerTitle>
+          </DrawerHeader>
+          <div className="max-h-[76vh] overflow-y-auto pb-[max(env(safe-area-inset-bottom),0px)]">
+            {mobileDetailIP ? (
+              <IPExpandedDetails
+                ip={mobileDetailIP}
+                proxyStats={expandedIPProxyQuery.data ?? []}
+                proxyStatsLoading={
+                  expandedIPProxyQuery.isLoading &&
+                  !expandedIPProxyQuery.data
+                }
+                domainDetails={expandedIPDomainDetailsQuery.data ?? []}
+                domainDetailsLoading={
+                  expandedIPDomainDetailsQuery.isLoading &&
+                  !expandedIPDomainDetailsQuery.data
+                }
+                associatedDomainsIcon="link"
+                labels={{
+                  proxyTraffic: t("proxyTraffic"),
+                  associatedDomains: t("associatedDomains"),
+                  conn: t("conn"),
+                }}
+              />
+            ) : null}
+          </div>
+        </DrawerContent>
+      </Drawer>
 
       {/* Pagination Footer */}
       {totalPages > 0 && (

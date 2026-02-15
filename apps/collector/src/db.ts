@@ -886,6 +886,10 @@ export class StatsDatabase {
   getTotalConnectionLogsCount() { return this.repos.config.getTotalConnectionLogsCount(); }
   getRetentionConfig() { return this.repos.config.getRetentionConfig(); }
   updateRetentionConfig(updates: { connectionLogsDays?: number; hourlyStatsDays?: number; autoCleanup?: boolean }) { return this.repos.config.updateRetentionConfig(updates); }
+  getGeoLookupConfig() { return this.repos.config.getGeoLookupConfig(); }
+  updateGeoLookupConfig(updates: { provider?: 'online' | 'local'; onlineApiUrl?: string }) {
+    return this.repos.config.updateGeoLookupConfig(updates);
+  }
   vacuum() { this.repos.config.vacuum(); }
   deleteOldMinuteStats(cutoff: string) { return this.repos.config.deleteOldMinuteStats(cutoff); }
   deleteOldConnectionLogs(cutoff: string) { return this.repos.config.deleteOldConnectionLogs(cutoff); }

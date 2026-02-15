@@ -104,6 +104,8 @@ services:
       - "3000:3000" # Web UI
     volumes:
       - ./data:/app/data
+      # 本地 MMDB（可选，文件需自行下载并放到 ./geoip）
+      - ./geoip:/app/data/geoip:ro
     environment:
       - NODE_ENV=production
       - DB_PATH=/app/data/stats.db
@@ -129,6 +131,8 @@ services:
       - "3002:3002" # WebSocket（供 Nginx / Tunnel 转发）
     volumes:
       - ./data:/app/data
+      # 本地 MMDB（可选，文件需自行下载并放到 ./geoip）
+      - ./geoip:/app/data/geoip:ro
     environment:
       - NODE_ENV=production
       - DB_PATH=/app/data/stats.db
@@ -180,6 +184,9 @@ docker run -d \
 
 > `docker run` 修改外部端口时，直接改 `-p` 映射即可。  
 > 仅在“非反代直连 WS 且外部 WS 端口不是 3002”时，额外传入 `-e WS_EXTERNAL_PORT=<外部WS端口>`。
+>
+> 本地 MMDB 查询模式（可选）：额外挂载 `-v $(pwd)/geoip:/app/data/geoip:ro`，
+> 并在面板「设置 -> 偏好设置 -> IP 查询来源」切换到本地。
 
 ### 方式三：一键脚本
 
@@ -347,6 +354,8 @@ curl -fsSL https://raw.githubusercontent.com/foru17/neko-master/main/setup.sh | 
 | `NEXT_PUBLIC_WS_PORT` | `3002` | WS 直连端口兜底值（构建时注入） | 非反代直连 WS 且需显式指定端口时 |
 | `API_URL` | `http://localhost:3001` | Next.js `/api` rewrite 目标（主要用于源码/自构建） | 你修改了 API 实际监听地址时 |
 | `COOKIE_SECRET` | 自动生成 | Cookie 签名密钥；未固定时会自动生成（数据目录不持久化时重启后会话会失效） | 生产环境强烈建议固定配置 |
+| `GEOIP_LOOKUP_PROVIDER` | `online` | IP 地理查询来源（`online`/`local`） | 需要默认走本地 MMDB 查询时 |
+| `GEOIP_ONLINE_API_URL` | `https://api.ipinfo.es/ipinfo` | 在线 IP 查询接口地址（需兼容 `ipinfo.my` 的响应结构） | 仅在你部署了兼容接口时设置 |
 | `FORCE_ACCESS_CONTROL_OFF` | `false` | 强制关闭访问控制（紧急恢复） | 仅忘记密码临时使用 |
 | `SHOWCASE_SITE_MODE` | `false` | 演示只读模式（禁用敏感写操作） | 仅公开演示站点 |
 
@@ -379,6 +388,8 @@ curl -fsSL https://raw.githubusercontent.com/foru17/neko-master/main/setup.sh | 
 NODE_ENV=production
 DB_PATH=/app/data/stats.db
 COOKIE_SECRET=<至少32字节随机字符串>
+# 可选：默认切换到本地 MMDB 查询
+# GEOIP_LOOKUP_PROVIDER=local
 # 仅紧急恢复时临时开启，平时不要保留 true
 # FORCE_ACCESS_CONTROL_OFF=false
 ```
@@ -390,6 +401,10 @@ COOKIE_SECRET=<至少32字节随机字符串>
 1. 挂载持久化目录（如 `./data:/app/data`），避免数据库与自动生成密钥丢失。
 2. 如果外部直连 WS 且端口非 `3002`，务必同步设置 `WS_EXTERNAL_PORT`。
 3. 若源码部署修改了 API 端口或地址，记得同步设置 `API_URL`。
+4. 如需本地 MMDB 查询：挂载 `./geoip:/app/data/geoip:ro`，并在面板「设置 -> 偏好设置 -> IP 查询来源」切换为本地。
+5. MMDB 文件体积较大，项目镜像不内置数据库。请自行下载并放入 `./geoip`，文件名固定为：
+   `GeoLite2-City.mmdb`、`GeoLite2-ASN.mmdb`（必需），`GeoLite2-Country.mmdb`（可选）。
+   推荐来源：<https://github.com/P3TERX/GeoLite.mmdb>。
 
 ## 🌐 反向代理与 Tunnel
 
@@ -591,6 +606,18 @@ docker compose up -d
 
 1. 设置固定 `COOKIE_SECRET`
 2. 挂载 `./data:/app/data`
+
+### Q: 本地 MMDB 查询要准备哪些文件？
+
+**A:** 建议在项目目录创建 `./geoip`（可与 `docker-compose.yml` 同级），然后放置以下文件：
+
+1. `GeoLite2-City.mmdb`（必需）
+2. `GeoLite2-ASN.mmdb`（必需）
+3. `GeoLite2-Country.mmdb`（可选）
+
+推荐下载源：<https://github.com/P3TERX/GeoLite.mmdb>。  
+容器内固定读取目录是 `/app/data/geoip`，因此建议保持挂载：
+`./geoip:/app/data/geoip:ro`。后续你只需替换宿主机 `./geoip` 里的文件即可完成更新。
 
 ### Q: 连接 OpenClash / 网关失败？
 

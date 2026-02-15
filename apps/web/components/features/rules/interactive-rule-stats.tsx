@@ -40,6 +40,7 @@ import { ProxyChainBadge } from "@/components/features/proxies/proxy-chain-badge
 import { DomainExpandedDetails, IPExpandedDetails } from "@/components/features/stats/table/expanded-details";
 import { useIsWindows } from "@/lib/hooks/use-is-windows";
 import { ExpandReveal } from "@/components/ui/expand-reveal";
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { UnifiedRuleChainFlow } from "@/components/features/rules/rule-chain-flow";
 import { InsightChartSkeleton, InsightDetailSectionSkeleton, InsightTableSkeleton, InsightThreePanelSkeleton } from "@/components/ui/insight-skeleton";
 import type { RuleStats, DomainStats, IPStats, StatsSummary } from "@neko-master/shared";
@@ -215,6 +216,15 @@ export function InteractiveRuleStats({
   // Expanded states
   const [expandedDomain, setExpandedDomain] = useState<string | null>(null);
   const [expandedIP, setExpandedIP] = useState<string | null>(null);
+  const [mobileDomainDetailsOpen, setMobileDomainDetailsOpen] = useState(false);
+  const [mobileDomainDetail, setMobileDomainDetail] = useState<DomainStats | null>(null);
+  const [mobileIPDetailsOpen, setMobileIPDetailsOpen] = useState(false);
+  const [mobileIPDetail, setMobileIPDetail] = useState<IPStats | null>(null);
+  const detailDomainKey = mobileDomainDetailsOpen
+    ? (mobileDomainDetail?.domain ?? null)
+    : expandedDomain;
+  const detailIPKey = mobileIPDetailsOpen ? (mobileIPDetail?.ip ?? null) : expandedIP;
+  const mobileIPColor = getIPColor(mobileIPDetail?.ip ?? "0.0.0.0");
 
   useEffect(() => {
     const media = window.matchMedia("(min-width: 640px)");
@@ -369,34 +379,34 @@ export function InteractiveRuleStats({
 
   const expandedDomainProxyQuery = useRuleDomainProxyStats({
     rule: selectedRule ?? undefined,
-    domain: expandedDomain ?? undefined,
+    domain: detailDomainKey ?? undefined,
     activeBackendId,
     range: detailTimeRange,
-    enabled: !!expandedDomain,
+    enabled: !!detailDomainKey,
   });
 
   const expandedDomainIPDetailsQuery = useRuleDomainIPDetails({
     rule: selectedRule ?? undefined,
-    domain: expandedDomain ?? undefined,
+    domain: detailDomainKey ?? undefined,
     activeBackendId,
     range: detailTimeRange,
-    enabled: !!expandedDomain,
+    enabled: !!detailDomainKey,
   });
 
   const expandedIPProxyQuery = useRuleIPProxyStats({
     rule: selectedRule ?? undefined,
-    ip: expandedIP ?? undefined,
+    ip: detailIPKey ?? undefined,
     activeBackendId,
     range: detailTimeRange,
-    enabled: !!expandedIP,
+    enabled: !!detailIPKey,
   });
 
   const expandedIPDomainDetailsQuery = useRuleIPDomainDetails({
     rule: selectedRule ?? undefined,
-    ip: expandedIP ?? undefined,
+    ip: detailIPKey ?? undefined,
     activeBackendId,
     range: detailTimeRange,
-    enabled: !!expandedIP,
+    enabled: !!detailIPKey,
   });
 
   const { data: ruleDomains = [], isLoading: domainsLoading } = useRuleDomains({
@@ -455,11 +465,19 @@ export function InteractiveRuleStats({
     setIpSearch("");
     setExpandedDomain(null);
     setExpandedIP(null);
+    setMobileDomainDetailsOpen(false);
+    setMobileDomainDetail(null);
+    setMobileIPDetailsOpen(false);
+    setMobileIPDetail(null);
   }, [selectedRule]);
 
   useEffect(() => {
     setExpandedDomain(null);
     setExpandedIP(null);
+    setMobileDomainDetailsOpen(false);
+    setMobileDomainDetail(null);
+    setMobileIPDetailsOpen(false);
+    setMobileIPDetail(null);
   }, [activeBackendId]);
 
   const handleRuleClick = useCallback((rule: string) => {
@@ -467,6 +485,30 @@ export function InteractiveRuleStats({
       setSelectedRule(rule);
     }
   }, [selectedRule]);
+
+  const openMobileDomainDetails = (domain: DomainStats) => {
+    setMobileDomainDetail(domain);
+    setMobileDomainDetailsOpen(true);
+  };
+
+  const handleMobileDomainDetailsOpenChange = (open: boolean) => {
+    setMobileDomainDetailsOpen(open);
+    if (!open) {
+      setMobileDomainDetail(null);
+    }
+  };
+
+  const openMobileIPDetails = (ip: IPStats) => {
+    setMobileIPDetail(ip);
+    setMobileIPDetailsOpen(true);
+  };
+
+  const handleMobileIPDetailsOpenChange = (open: boolean) => {
+    setMobileIPDetailsOpen(open);
+    if (!open) {
+      setMobileIPDetail(null);
+    }
+  };
 
   const selectedRuleData = useMemo(() => {
     return chartData.find(r => r.rawName === selectedRule);
@@ -1131,7 +1173,9 @@ export function InteractiveRuleStats({
                             totalFilteredDomainTraffic > 0
                               ? (domainTraffic / totalFilteredDomainTraffic) * 100
                               : 0;
-                          const isExpanded = expandedDomain === domain.domain;
+                          const isDesktopExpanded = expandedDomain === domain.domain;
+                          const isMobileActive =
+                            mobileDomainDetailsOpen && mobileDomainDetail?.domain === domain.domain;
                           
                           return (
                             <div key={domain.domain} className="group">
@@ -1139,7 +1183,7 @@ export function InteractiveRuleStats({
                               <div
                                 className={cn(
                                   "hidden sm:grid grid-cols-12 gap-3 px-5 py-4 items-center hover:bg-secondary/20 transition-colors cursor-pointer",
-                                  isExpanded && "bg-secondary/10"
+                                  isDesktopExpanded && "bg-secondary/10"
                                 )}
                                 style={{ animationDelay: `${index * 50}ms` }}
                                 onClick={() => toggleExpandDomain(domain.domain)}
@@ -1185,7 +1229,7 @@ export function InteractiveRuleStats({
                                     size="sm"
                                     className={cn(
                                       "h-7 px-2 gap-1 text-xs font-medium transition-all",
-                                      isExpanded 
+                                      isDesktopExpanded 
                                         ? "bg-primary/10 text-primary hover:bg-primary/20" 
                                         : "bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary"
                                     )}
@@ -1196,7 +1240,7 @@ export function InteractiveRuleStats({
                                   >
                                     <Server className="h-3 w-3" />
                                     {domain.ips.length}
-                                    {isExpanded ? (
+                                    {isDesktopExpanded ? (
                                       <ChevronUp className="h-3 w-3 ml-0.5" />
                                     ) : (
                                       <ChevronDown className="h-3 w-3 ml-0.5" />
@@ -1209,9 +1253,9 @@ export function InteractiveRuleStats({
                               <div
                                 className={cn(
                                   "sm:hidden px-4 py-3 hover:bg-secondary/20 transition-colors cursor-pointer",
-                                  isExpanded && "bg-secondary/10"
+                                  isMobileActive && "bg-secondary/10"
                                 )}
-                                onClick={() => toggleExpandDomain(domain.domain)}
+                                onClick={() => openMobileDomainDetails(domain)}
                               >
                                 {/* Top: Favicon + Domain + Expand */}
                                 <div className="flex items-center gap-2.5 mb-2">
@@ -1228,18 +1272,18 @@ export function InteractiveRuleStats({
                                     size="sm"
                                     className={cn(
                                       "h-7 px-2 gap-1 text-xs font-medium shrink-0",
-                                      isExpanded 
+                                      isMobileActive 
                                         ? "bg-primary/10 text-primary" 
                                         : "bg-secondary/50 text-muted-foreground"
                                     )}
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      toggleExpandDomain(domain.domain);
+                                      openMobileDomainDetails(domain);
                                     }}
                                   >
                                     <Server className="h-3 w-3" />
                                     {domain.ips.length}
-                                    {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                                    {isMobileActive ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                                   </Button>
                                 </div>
 
@@ -1261,33 +1305,70 @@ export function InteractiveRuleStats({
                               </div>
 
                               {/* Expanded Details: Proxy Traffic + Associated IPs */}
-                              {isExpanded && (
-                                <ExpandReveal>
-                                  <DomainExpandedDetails
-                                    domain={domain}
-                                    proxyStats={expandedDomainProxyQuery.data ?? []}
-                                    proxyStatsLoading={
-                                      expandedDomainProxyQuery.isLoading &&
-                                      !expandedDomainProxyQuery.data
-                                    }
-                                    ipDetails={expandedDomainIPDetailsQuery.data ?? []}
-                                    ipDetailsLoading={
-                                      expandedDomainIPDetailsQuery.isLoading &&
-                                      !expandedDomainIPDetailsQuery.data
-                                    }
-                                    labels={{
-                                      proxyTraffic: domainsT("proxyTraffic"),
-                                      associatedIPs: domainsT("associatedIPs"),
-                                      conn: domainsT("conn"),
-                                    }}
-                                  />
-                                </ExpandReveal>
+                              {isDesktopExpanded && (
+                                <div className="hidden sm:block">
+                                  <ExpandReveal>
+                                    <DomainExpandedDetails
+                                      domain={domain}
+                                      proxyStats={expandedDomainProxyQuery.data ?? []}
+                                      proxyStatsLoading={
+                                        expandedDomainProxyQuery.isLoading &&
+                                        !expandedDomainProxyQuery.data
+                                      }
+                                      ipDetails={expandedDomainIPDetailsQuery.data ?? []}
+                                      ipDetailsLoading={
+                                        expandedDomainIPDetailsQuery.isLoading &&
+                                        !expandedDomainIPDetailsQuery.data
+                                      }
+                                      labels={{
+                                        proxyTraffic: domainsT("proxyTraffic"),
+                                        associatedIPs: domainsT("associatedIPs"),
+                                        conn: domainsT("conn"),
+                                      }}
+                                    />
+                                  </ExpandReveal>
+                                </div>
                               )}
                             </div>
                           );
                         });
                       })()}
                     </div>
+
+                    <Drawer open={mobileDomainDetailsOpen} onOpenChange={handleMobileDomainDetailsOpenChange}>
+                      <DrawerContent className="sm:hidden">
+                        <DrawerHeader className="border-b border-border/60 bg-background/95 px-4 pt-2 pb-2">
+                          <div className="flex items-center gap-2.5 min-w-0 rounded-lg border border-border/60 bg-muted/25 px-3 py-2">
+                            <Favicon domain={mobileDomainDetail?.domain || ""} size="sm" className="shrink-0" />
+                            <DrawerTitle className="truncate text-left text-[15px] font-semibold leading-6">
+                              {mobileDomainDetail?.domain || domainsT("unknown")}
+                            </DrawerTitle>
+                          </div>
+                        </DrawerHeader>
+                        <div className="max-h-[76vh] overflow-y-auto pb-[max(env(safe-area-inset-bottom),0px)]">
+                          {mobileDomainDetail ? (
+                            <DomainExpandedDetails
+                              domain={mobileDomainDetail}
+                              proxyStats={expandedDomainProxyQuery.data ?? []}
+                              proxyStatsLoading={
+                                expandedDomainProxyQuery.isLoading &&
+                                !expandedDomainProxyQuery.data
+                              }
+                              ipDetails={expandedDomainIPDetailsQuery.data ?? []}
+                              ipDetailsLoading={
+                                expandedDomainIPDetailsQuery.isLoading &&
+                                !expandedDomainIPDetailsQuery.data
+                              }
+                              labels={{
+                                proxyTraffic: domainsT("proxyTraffic"),
+                                associatedIPs: domainsT("associatedIPs"),
+                                conn: domainsT("conn"),
+                              }}
+                            />
+                          ) : null}
+                        </div>
+                      </DrawerContent>
+                    </Drawer>
 
                     {/* Pagination */}
                     {filteredDomains.length > 0 && (
@@ -1487,7 +1568,8 @@ export function InteractiveRuleStats({
                             totalFilteredIPTraffic > 0
                               ? (ipTraffic / totalFilteredIPTraffic) * 100
                               : 0;
-                          const isExpanded = expandedIP === ip.ip;
+                          const isDesktopExpanded = expandedIP === ip.ip;
+                          const isMobileActive = mobileIPDetailsOpen && mobileIPDetail?.ip === ip.ip;
                           const ipColor = getIPColor(ip.ip);
                           
                           return (
@@ -1496,7 +1578,7 @@ export function InteractiveRuleStats({
                               <div
                                 className={cn(
                                   "hidden sm:grid grid-cols-12 gap-3 px-5 py-4 items-center hover:bg-secondary/20 transition-colors cursor-pointer",
-                                  isExpanded && "bg-secondary/10"
+                                  isDesktopExpanded && "bg-secondary/10"
                                 )}
                                 style={{ animationDelay: `${index * 50}ms` }}
                                 onClick={() => toggleExpandIP(ip.ip)}
@@ -1550,7 +1632,7 @@ export function InteractiveRuleStats({
                                     size="sm"
                                     className={cn(
                                       "h-7 px-2 gap-1 text-xs font-medium transition-all",
-                                      isExpanded 
+                                      isDesktopExpanded 
                                         ? "bg-primary/10 text-primary hover:bg-primary/20" 
                                         : "bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary"
                                     )}
@@ -1561,7 +1643,7 @@ export function InteractiveRuleStats({
                                   >
                                     <Link2 className="h-3 w-3" />
                                     {ip.domains.length}
-                                    {isExpanded ? (
+                                    {isDesktopExpanded ? (
                                       <ChevronUp className="h-3 w-3 ml-0.5" />
                                     ) : (
                                       <ChevronDown className="h-3 w-3 ml-0.5" />
@@ -1574,9 +1656,9 @@ export function InteractiveRuleStats({
                               <div
                                 className={cn(
                                   "sm:hidden px-4 py-3 hover:bg-secondary/20 transition-colors cursor-pointer",
-                                  isExpanded && "bg-secondary/10"
+                                  isMobileActive && "bg-secondary/10"
                                 )}
-                                onClick={() => toggleExpandIP(ip.ip)}
+                                onClick={() => openMobileIPDetails(ip)}
                               >
                                 {/* Top: IP Icon + IP + Location + Expand */}
                                 <div className="flex items-center gap-2.5 mb-2">
@@ -1597,18 +1679,18 @@ export function InteractiveRuleStats({
                                     size="sm"
                                     className={cn(
                                       "h-7 px-2 gap-1 text-xs font-medium shrink-0",
-                                      isExpanded 
+                                      isMobileActive 
                                         ? "bg-primary/10 text-primary" 
                                         : "bg-secondary/50 text-muted-foreground"
                                     )}
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      toggleExpandIP(ip.ip);
+                                      openMobileIPDetails(ip);
                                     }}
                                   >
                                     <Link2 className="h-3 w-3" />
                                     {ip.domains.length}
-                                    {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                                    {isMobileActive ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                                   </Button>
                                 </div>
 
@@ -1630,34 +1712,80 @@ export function InteractiveRuleStats({
                               </div>
 
                               {/* Expanded Details: Proxy Traffic + Associated Domains */}
-                              {isExpanded && (
-                                <ExpandReveal>
-                                  <IPExpandedDetails
-                                    ip={ip}
-                                    proxyStats={expandedIPProxyQuery.data ?? []}
-                                    proxyStatsLoading={
-                                      expandedIPProxyQuery.isLoading &&
-                                      !expandedIPProxyQuery.data
-                                    }
-                                    domainDetails={expandedIPDomainDetailsQuery.data ?? []}
-                                    domainDetailsLoading={
-                                      expandedIPDomainDetailsQuery.isLoading &&
-                                      !expandedIPDomainDetailsQuery.data
-                                    }
-                                    associatedDomainsIcon="link"
-                                    labels={{
-                                      proxyTraffic: ipsT("proxyTraffic"),
-                                      associatedDomains: ipsT("associatedDomains"),
-                                      conn: ipsT("conn"),
-                                    }}
-                                  />
-                                </ExpandReveal>
+                              {isDesktopExpanded && (
+                                <div className="hidden sm:block">
+                                  <ExpandReveal>
+                                    <IPExpandedDetails
+                                      ip={ip}
+                                      proxyStats={expandedIPProxyQuery.data ?? []}
+                                      proxyStatsLoading={
+                                        expandedIPProxyQuery.isLoading &&
+                                        !expandedIPProxyQuery.data
+                                      }
+                                      domainDetails={expandedIPDomainDetailsQuery.data ?? []}
+                                      domainDetailsLoading={
+                                        expandedIPDomainDetailsQuery.isLoading &&
+                                        !expandedIPDomainDetailsQuery.data
+                                      }
+                                      associatedDomainsIcon="link"
+                                      labels={{
+                                        proxyTraffic: ipsT("proxyTraffic"),
+                                        associatedDomains: ipsT("associatedDomains"),
+                                        conn: ipsT("conn"),
+                                      }}
+                                    />
+                                  </ExpandReveal>
+                                </div>
                               )}
                             </div>
                           );
                         });
                       })()}
                     </div>
+
+                    <Drawer open={mobileIPDetailsOpen} onOpenChange={handleMobileIPDetailsOpenChange}>
+                      <DrawerContent className="sm:hidden">
+                        <DrawerHeader className="border-b border-border/60 bg-background/95 px-4 pt-2 pb-2">
+                          <div className="flex items-center gap-2.5 min-w-0 rounded-lg border border-border/60 bg-muted/25 px-3 py-2">
+                            <div
+                              className={cn(
+                                "w-5 h-5 rounded-md flex items-center justify-center shrink-0",
+                                mobileIPColor.bg,
+                                mobileIPColor.text,
+                              )}
+                            >
+                              <Server className="w-3 h-3" />
+                            </div>
+                            <DrawerTitle className="truncate text-left font-mono text-[15px] font-semibold leading-6">
+                              {mobileIPDetail?.ip || ipsT("unknownIP")}
+                            </DrawerTitle>
+                          </div>
+                        </DrawerHeader>
+                        <div className="max-h-[76vh] overflow-y-auto pb-[max(env(safe-area-inset-bottom),0px)]">
+                          {mobileIPDetail ? (
+                            <IPExpandedDetails
+                              ip={mobileIPDetail}
+                              proxyStats={expandedIPProxyQuery.data ?? []}
+                              proxyStatsLoading={
+                                expandedIPProxyQuery.isLoading &&
+                                !expandedIPProxyQuery.data
+                              }
+                              domainDetails={expandedIPDomainDetailsQuery.data ?? []}
+                              domainDetailsLoading={
+                                expandedIPDomainDetailsQuery.isLoading &&
+                                !expandedIPDomainDetailsQuery.data
+                              }
+                              associatedDomainsIcon="link"
+                              labels={{
+                                proxyTraffic: ipsT("proxyTraffic"),
+                                associatedDomains: ipsT("associatedDomains"),
+                                conn: ipsT("conn"),
+                              }}
+                            />
+                          ) : null}
+                        </div>
+                      </DrawerContent>
+                    </Drawer>
 
                     {/* Pagination */}
                     {filteredIPs.length > 0 && (

@@ -66,12 +66,13 @@ export function DomainPreview({
         <PopoverContent
           align="start"
           side="bottom"
-          sideOffset={8}
-          className="w-[min(92vw,30rem)] rounded-lg border-border/50 bg-popover p-2.5 shadow-lg"
+          sideOffset={6}
+          collisionPadding={12}
+          className="w-[min(94vw,24rem)] rounded-lg border border-border/60 bg-popover/98 p-2 shadow-lg ring-1 ring-black/5 dark:bg-slate-950/94 dark:border-white/[0.08] dark:ring-0 dark:shadow-[0_14px_30px_rgba(0,0,0,0.46)]"
           onClick={(event) => event.stopPropagation()}
         >
           <div className="flex items-start gap-2">
-            <code className="min-w-0 flex-1 max-h-28 overflow-auto rounded-md border border-border/50 bg-muted/25 px-2.5 py-2 text-[13px] leading-5 break-all">
+            <code className="min-w-0 flex-1 max-h-24 overflow-auto rounded-md border border-border/55 bg-muted/35 px-2 py-1.5 text-[13px] leading-5 break-all dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-slate-100">
               {domainText}
             </code>
             {domain ? (
@@ -83,10 +84,10 @@ export function DomainPreview({
                   title={copied ? copiedLabel : copyLabel}
                   aria-label={copied ? copiedLabel : copyLabel}
                   className={cn(
-                    "h-8 w-8 shrink-0 rounded-md border border-border/40",
+                    "h-8 w-8 shrink-0 rounded-md border border-border/55 dark:border-white/[0.08] dark:bg-white/[0.02]",
                     copied
                       ? "text-emerald-600 bg-emerald-500/15 hover:bg-emerald-500/20 dark:text-emerald-400"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
                   )}
                   onClick={(event) => {
                     event.preventDefault();

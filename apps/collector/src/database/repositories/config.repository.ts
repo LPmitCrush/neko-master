@@ -6,6 +6,7 @@
  */
 import type Database from 'better-sqlite3';
 import * as fs from 'node:fs';
+import path from 'node:path';
 import { BaseRepository } from './base.repository.js';
 
 interface DatabaseRetentionConfig {
@@ -14,8 +15,23 @@ interface DatabaseRetentionConfig {
   autoCleanup: boolean;
 }
 
+export type GeoLookupProvider = 'online' | 'local';
+
+interface GeoLookupConfig {
+  provider: GeoLookupProvider;
+  mmdbDir: string;
+  onlineApiUrl: string;
+  localMmdbReady: boolean;
+  missingMmdbFiles: string[];
+}
+
 export class ConfigRepository extends BaseRepository {
   private dbPath: string;
+  private static readonly REQUIRED_MMDB_FILES = [
+    'GeoLite2-City.mmdb',
+    'GeoLite2-ASN.mmdb',
+  ] as const;
+  private static readonly DEFAULT_MMDB_DIR = '/app/data/geoip';
 
   constructor(db: Database.Database, dbPath: string) {
     super(db);
@@ -67,6 +83,89 @@ export class ConfigRepository extends BaseRepository {
       `).run(updates.autoCleanup ? '1' : '0');
     }
     return this.getRetentionConfig();
+  }
+
+  // Geo lookup config
+  getGeoLookupConfig(): GeoLookupConfig {
+    const providerRow = this.db.prepare(
+      `SELECT value FROM app_config WHERE key = 'geoip.lookup_provider'`,
+    ).get() as { value: string } | undefined;
+
+    const onlineApiUrlRow = this.db.prepare(
+      `SELECT value FROM app_config WHERE key = 'geoip.online_api_url'`,
+    ).get() as { value: string } | undefined;
+
+    const envProviderRaw = process.env.GEOIP_LOOKUP_PROVIDER?.trim();
+    const envProvider =
+      envProviderRaw === 'online' || envProviderRaw === 'local'
+        ? envProviderRaw
+        : undefined;
+    const providerValue =
+      envProvider ||
+      (providerRow?.value === 'online' || providerRow?.value === 'local'
+        ? (providerRow.value as GeoLookupProvider)
+        : 'online');
+
+    const mmdbDirValue = this.resolveMmdbDir();
+    const missingMmdbFiles = ConfigRepository.REQUIRED_MMDB_FILES.filter(
+      (file) => !fs.existsSync(path.join(mmdbDirValue, file)),
+    );
+
+    return {
+      provider: providerValue,
+      mmdbDir: mmdbDirValue,
+      onlineApiUrl:
+        process.env.GEOIP_ONLINE_API_URL?.trim() ||
+        onlineApiUrlRow?.value ||
+        'https://api.ipinfo.es/ipinfo',
+      localMmdbReady: missingMmdbFiles.length === 0,
+      missingMmdbFiles,
+    };
+  }
+
+  private resolveMmdbDir(): string {
+    const envMmdbDir = process.env.GEOIP_MMDB_DIR?.trim();
+    const fallbackCandidates = [
+      path.join(process.cwd(), 'geoip'),
+      path.join(process.cwd(), 'geo'),
+      path.resolve(process.cwd(), '..', 'geoip'),
+      path.resolve(process.cwd(), '..', 'geo'),
+      path.resolve(process.cwd(), '..', '..', 'geoip'),
+      path.resolve(process.cwd(), '..', '..', 'geo'),
+      ConfigRepository.DEFAULT_MMDB_DIR,
+    ];
+
+    const candidates = [envMmdbDir, ...fallbackCandidates]
+      .filter((dir): dir is string => !!dir)
+      .map((dir) => path.resolve(dir));
+    const uniqueCandidates = Array.from(new Set(candidates));
+    const existing = uniqueCandidates.find((dir) => fs.existsSync(dir));
+    if (existing) return existing;
+
+    if (envMmdbDir) {
+      return path.resolve(envMmdbDir);
+    }
+    return ConfigRepository.DEFAULT_MMDB_DIR;
+  }
+
+  updateGeoLookupConfig(updates: {
+    provider?: GeoLookupProvider;
+    onlineApiUrl?: string;
+  }): GeoLookupConfig {
+    if (updates.provider !== undefined) {
+      this.db.prepare(`
+        INSERT INTO app_config (key, value) VALUES ('geoip.lookup_provider', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+      `).run(updates.provider);
+    }
+    if (updates.onlineApiUrl !== undefined) {
+      this.db.prepare(`
+        INSERT INTO app_config (key, value) VALUES ('geoip.online_api_url', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+      `).run(updates.onlineApiUrl);
+    }
+
+    return this.getGeoLookupConfig();
   }
 
   // Data cleanup
