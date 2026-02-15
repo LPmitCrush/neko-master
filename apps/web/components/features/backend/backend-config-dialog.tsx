@@ -1451,18 +1451,39 @@ export function BackendConfigDialog({
                     onValueChange={handleGeoLookupProviderChange}
                     className="space-y-2"
                     disabled={updatingGeoLookup || isShowcase}>
-                    <div className="flex items-center gap-2 rounded-md border p-3">
+                    <div
+                      className={cn(
+                        "flex items-center gap-2 rounded-md border p-3 transition-all",
+                        geoLookupConfig.provider === "online"
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:bg-muted/50",
+                        !(updatingGeoLookup || isShowcase) && "cursor-pointer",
+                      )}
+                      onClick={() => {
+                        if (updatingGeoLookup || isShowcase) return;
+                        handleGeoLookupProviderChange("online");
+                      }}>
                       <RadioGroupItem value="online" id="geo-provider-online" />
-                      <Label htmlFor="geo-provider-online" className="cursor-pointer">
+                      <Label htmlFor="geo-provider-online" className="cursor-pointer font-medium">
                         {t("geoLookupOnline")}
                       </Label>
                     </div>
                     <div
                       className={cn(
-                        "flex items-center gap-2 rounded-md border p-3",
+                        "flex items-center gap-2 rounded-md border p-3 transition-all",
+                        geoLookupConfig.provider === "local"
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:bg-muted/50",
                         !geoLookupConfig.localMmdbReady &&
-                          "opacity-60 cursor-not-allowed",
-                      )}>
+                          "opacity-60 cursor-not-allowed hover:bg-transparent",
+                        geoLookupConfig.localMmdbReady &&
+                          !(updatingGeoLookup || isShowcase) &&
+                          "cursor-pointer",
+                      )}
+                      onClick={() => {
+                        if (updatingGeoLookup || isShowcase || !geoLookupConfig.localMmdbReady) return;
+                        handleGeoLookupProviderChange("local");
+                      }}>
                       <RadioGroupItem
                         value="local"
                         id="geo-provider-local"
@@ -1471,7 +1492,7 @@ export function BackendConfigDialog({
                       <Label
                         htmlFor="geo-provider-local"
                         className={cn(
-                          "cursor-pointer",
+                          "cursor-pointer font-medium",
                           !geoLookupConfig.localMmdbReady && "cursor-not-allowed",
                         )}>
                         {t("geoLookupLocal")}

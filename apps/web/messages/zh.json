@@ -414,7 +414,7 @@
     "faviconIm": "favicon.im (国内推荐)",
     "faviconOff": "关闭（使用默认图标）",
     "geoLookupProvider": "IP 查询来源",
-    "geoLookupProviderDescription": "可在在线接口与本地 MMDB 查询间切换。本地模式不依赖外部网络并且更有利于隐私保护。",
+    "geoLookupProviderDescription": "可在在线接口与本地 MMDB 查询间切换。在线模式开箱即用，本地模式适用于离线或受限网络环境。",
     "geoLookupOnline": "在线接口（默认）",
     "geoLookupLocal": "本地 MMDB",
     "geoLookupFixedPathHint": "本地模式会自动读取 MMDB 文件（需包含 GeoLite2-City.mmdb 和 GeoLite2-ASN.mmdb，Country 可选）。",

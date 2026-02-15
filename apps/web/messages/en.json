@@ -415,7 +415,7 @@
     "faviconIm": "favicon.im (Recommended for China)",
     "faviconOff": "Off (Use default icons)",
     "geoLookupProvider": "IP Lookup Source",
-    "geoLookupProviderDescription": "Switch between online API and local MMDB lookup. Local mode avoids external network dependency and improves privacy.",
+    "geoLookupProviderDescription": "Switch between online API and local MMDB lookup. Online mode works out of the box, while local mode is suitable for offline or restricted-network environments.",
     "geoLookupOnline": "Online API (Default)",
     "geoLookupLocal": "Local MMDB",
     "geoLookupFixedPathHint": "Local mode automatically reads MMDB files (requires GeoLite2-City.mmdb and GeoLite2-ASN.mmdb, Country optional).",

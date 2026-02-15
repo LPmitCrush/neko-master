@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.9] - 2026-02-16
+
+### Added
+
+- **Offline GeoIP lookup via local MMDB** 🌐
+  - Added IP lookup source switching in Settings (`online` / `local`)
+  - Added support for local MMDB files: `GeoLite2-City.mmdb`, `GeoLite2-ASN.mmdb` (required), `GeoLite2-Country.mmdb` (optional)
+- **MMDB preflight checks and safeguards**
+  - Required MMDB files are validated before enabling local mode
+  - Local option is disabled when required files are missing, with missing-file hints in UI
+- **MMDB availability fallback safeguards**
+  - If MMDB files are removed, runtime lookup now falls back to online API automatically
+  - If config is still `local` while MMDB is unavailable, backend auto-reverts persisted provider to `online` to keep UI and runtime behavior consistent
+- **Improved local development MMDB directory detection**
+  - Improved MMDB directory resolution with multiple candidates and env override support
+  - Fixed the case where Local could not be enabled even though MMDB files existed in local development
+- **Unified mobile details interaction**
+  - Rules page (Domains / IPs) now uses Drawer for mobile details
+  - Mobile details behavior is aligned with devices and stats pages
+- **Improved settings interaction consistency**
+  - `IP Lookup Source` selected-state visuals are now consistent with the Favicon selector
+  - Options are now fully row-clickable instead of requiring direct radio-button clicks
+
+### Changed
+
+- Documentation updates (`README.md` / `README.en.md` / `.env.example`):
+  - Added clearer local MMDB deployment and mount instructions
+  - Clarified that `GEOIP_ONLINE_API_URL` is intended for endpoints compatible with the `ipinfo.my` response schema
+  - Consolidated duplicate English README entry points
+
 ## [1.2.8] - 2026-02-15
 
 ### Performance

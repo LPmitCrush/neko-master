@@ -95,6 +95,7 @@ export function IPStatsTable({
   const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false);
   const [mobileDetailIP, setMobileDetailIP] = useState<IPStats | null>(null);
   const detailIPKey = mobileDetailsOpen ? (mobileDetailIP?.ip ?? null) : expandedIP;
+  const mobileDetailIPGradient = getIPGradient(mobileDetailIP?.ip ?? "0.0.0.0");
 
   useEffect(() => {
     // Context switch (backend/device/proxy/rule binding change): collapse.
@@ -519,7 +520,10 @@ export function IPStatsTable({
             <Drawer open={mobileDetailsOpen} onOpenChange={handleMobileDetailsOpenChange}>
               <DrawerContent className="sm:hidden">
                 <DrawerHeader className="border-b border-border/60 bg-background/95 px-5 pt-2 pb-2.5">
-                  <div className="min-w-0 rounded-md border border-border/60 bg-muted/25 px-2.5 py-2">
+                  <div className="flex items-center gap-2.5 min-w-0 rounded-md border border-border/60 bg-muted/25 px-2.5 py-2">
+                    <div className={`w-5 h-5 rounded-md bg-gradient-to-br ${mobileDetailIPGradient} flex items-center justify-center shrink-0`}>
+                      <Server className="w-3 h-3 text-white" />
+                    </div>
                     <DrawerTitle className="truncate text-left font-mono text-[15px] font-semibold leading-6">
                       {mobileDetailIP?.ip || t("unknownIP")}
                     </DrawerTitle>
