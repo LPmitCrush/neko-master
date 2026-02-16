@@ -51,7 +51,9 @@ import {
 } from "@/lib/stats-utils";
 import { normalizeGeoIP } from "@neko-master/shared";
 import type { IPStats } from "@neko-master/shared";
+
 const DETAIL_QUERY_STALE_MS = 30_000;
+type IPTableMode = "local" | "remote";
 
 interface IPStatsTableProps {
   ips: IPStats[];
@@ -67,6 +69,17 @@ interface IPStatsTableProps {
   richExpand?: boolean;
   showProxyColumn?: boolean;
   showProxyTrafficInExpand?: boolean;
+  mode?: IPTableMode;
+  searchValue?: string;
+  onSearchChange?: (value: string) => void;
+  sortKeyValue?: IPSortKey;
+  sortOrderValue?: SortOrder;
+  onSortChange?: (key: IPSortKey) => void;
+  pageValue?: number;
+  totalValue?: number;
+  onPageChange?: (page: number) => void;
+  ruleName?: string;
+  contextKey?: string | number;
 }
 
 export function IPStatsTable({
@@ -83,19 +96,37 @@ export function IPStatsTable({
   richExpand = false,
   showProxyColumn = true,
   showProxyTrafficInExpand = true,
+  mode = "local",
+  searchValue,
+  onSearchChange,
+  sortKeyValue,
+  sortOrderValue,
+  onSortChange,
+  pageValue,
+  totalValue,
+  onPageChange,
+  ruleName,
+  contextKey,
 }: IPStatsTableProps) {
   const t = useTranslations("ips");
   const detailTimeRange = useStableTimeRange(timeRange);
+  const isRemoteMode = mode === "remote";
 
-  const [page, setPage] = useState(1);
+  const [internalPage, setInternalPage] = useState(1);
   const [internalPageSize, setInternalPageSize] = useState<PageSize>(10);
   const pageSize = controlledPageSize ?? internalPageSize;
-  const [search, setSearch] = useState("");
-  const [sortKey, setSortKey] = useState<IPSortKey>("totalDownload");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+  const [internalSearch, setInternalSearch] = useState("");
+  const [internalSortKey, setInternalSortKey] =
+    useState<IPSortKey>("totalDownload");
+  const [internalSortOrder, setInternalSortOrder] =
+    useState<SortOrder>("desc");
   const [expandedIP, setExpandedIP] = useState<string | null>(null);
   const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false);
   const [mobileDetailIP, setMobileDetailIP] = useState<IPStats | null>(null);
+  const page = isRemoteMode ? pageValue ?? 1 : internalPage;
+  const search = isRemoteMode ? searchValue ?? "" : internalSearch;
+  const sortKey = isRemoteMode ? sortKeyValue ?? "totalDownload" : internalSortKey;
+  const sortOrder = isRemoteMode ? sortOrderValue ?? "desc" : internalSortOrder;
   const detailIPKey = mobileDetailsOpen ? (mobileDetailIP?.ip ?? null) : expandedIP;
   const mobileDetailIPGradient = getIPGradient(mobileDetailIP?.ip ?? "0.0.0.0");
 
@@ -104,33 +135,76 @@ export function IPStatsTable({
     setExpandedIP(null);
     setMobileDetailsOpen(false);
     setMobileDetailIP(null);
-  }, [activeBackendId, sourceIP, sourceChain, richExpand]);
+  }, [activeBackendId, sourceIP, sourceChain, richExpand, ruleName, contextKey]);
 
   useEffect(() => {
-    setPage(1);
-  }, [pageSize]);
+    if (!isRemoteMode) {
+      setInternalPage(1);
+      setInternalSearch("");
+      setInternalSortKey("totalDownload");
+      setInternalSortOrder("desc");
+    }
+  }, [contextKey, isRemoteMode]);
+
+  useEffect(() => {
+    if (!isRemoteMode) {
+      setInternalPage(1);
+    }
+  }, [pageSize, isRemoteMode]);
 
   const setEffectivePageSize = (size: PageSize) => {
     if (onPageSizeChange) {
       onPageSizeChange(size);
+    } else {
+      setInternalPageSize(size);
+    }
+
+    if (isRemoteMode) {
+      onPageChange?.(1);
+    } else {
+      setInternalPage(1);
+    }
+  };
+
+  const setEffectivePage = (nextPage: number) => {
+    if (isRemoteMode) {
+      onPageChange?.(nextPage);
       return;
     }
-    setInternalPageSize(size);
+    setInternalPage(nextPage);
+  };
+
+  const handleSearchInputChange = (value: string) => {
+    if (isRemoteMode) {
+      onSearchChange?.(value);
+      onPageChange?.(1);
+      return;
+    }
+    setInternalSearch(value);
+    setInternalPage(1);
   };
 
   const expandedIPProxyQuery = useQuery({
     queryKey: getIPProxyStatsQueryKey(detailIPKey, activeBackendId, detailTimeRange, {
       sourceIP,
       sourceChain,
+      rule: ruleName,
     }),
     queryFn: () =>
-      api.getIPProxyStats(
-        detailIPKey!,
-        activeBackendId,
-        detailTimeRange,
-        sourceIP,
-        sourceChain,
-      ),
+      ruleName
+        ? api.getRuleIPProxyStats(
+            ruleName,
+            detailIPKey!,
+            activeBackendId,
+            detailTimeRange,
+          )
+        : api.getIPProxyStats(
+            detailIPKey!,
+            activeBackendId,
+            detailTimeRange,
+            sourceIP,
+            sourceChain,
+          ),
     enabled: richExpand && !!activeBackendId && !!detailIPKey,
     staleTime: DETAIL_QUERY_STALE_MS,
     placeholderData: (previousData, previousQuery) =>
@@ -139,6 +213,7 @@ export function IPStatsTable({
         backendId: activeBackendId ?? null,
         sourceIP: sourceIP ?? "",
         sourceChain: sourceChain ?? "",
+        rule: ruleName ?? "",
       }),
   });
 
@@ -146,16 +221,24 @@ export function IPStatsTable({
     queryKey: getIPDomainDetailsQueryKey(detailIPKey, activeBackendId, detailTimeRange, {
       sourceIP,
       sourceChain,
+      rule: ruleName,
     }),
     queryFn: () =>
-      api.getIPDomainDetails(
-        detailIPKey!,
-        activeBackendId,
-        detailTimeRange,
-        sourceIP,
-        undefined,
-        sourceChain,
-      ),
+      ruleName
+        ? api.getRuleIPDomainDetails(
+            ruleName,
+            detailIPKey!,
+            activeBackendId,
+            detailTimeRange,
+          )
+        : api.getIPDomainDetails(
+            detailIPKey!,
+            activeBackendId,
+            detailTimeRange,
+            sourceIP,
+            undefined,
+            sourceChain,
+          ),
     enabled: richExpand && !!activeBackendId && !!detailIPKey,
     staleTime: DETAIL_QUERY_STALE_MS,
     placeholderData: (previousData, previousQuery) =>
@@ -164,17 +247,23 @@ export function IPStatsTable({
         backendId: activeBackendId ?? null,
         sourceIP: sourceIP ?? "",
         sourceChain: sourceChain ?? "",
+        rule: ruleName ?? "",
       }),
   });
 
   const handleSort = (key: IPSortKey) => {
-    if (sortKey === key) {
-      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
-    } else {
-      setSortKey(key);
-      setSortOrder("desc");
+    if (isRemoteMode) {
+      onSortChange?.(key);
+      return;
     }
-    setPage(1);
+
+    if (internalSortKey === key) {
+      setInternalSortOrder(internalSortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setInternalSortKey(key);
+      setInternalSortOrder("desc");
+    }
+    setInternalPage(1);
   };
 
   const toggleExpand = (ip: string) => {
@@ -204,6 +293,10 @@ export function IPStatsTable({
   };
 
   const filteredIPs = useMemo(() => {
+    if (isRemoteMode) {
+      return ips;
+    }
+
     let result = [...ips];
     if (search) {
       const lower = search.toLowerCase();
@@ -218,14 +311,22 @@ export function IPStatsTable({
       return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
     });
     return result;
-  }, [ips, search, sortKey, sortOrder]);
+  }, [ips, isRemoteMode, search, sortKey, sortOrder]);
 
-  const paginatedIPs = useMemo(() => {
+  const visibleIPs = useMemo(() => {
+    if (isRemoteMode) {
+      return ips;
+    }
     const start = (page - 1) * pageSize;
     return filteredIPs.slice(start, start + pageSize);
-  }, [filteredIPs, page, pageSize]);
+  }, [ips, filteredIPs, isRemoteMode, page, pageSize]);
 
-  const totalPages = Math.ceil(filteredIPs.length / pageSize);
+  const totalItems = isRemoteMode ? totalValue ?? ips.length : filteredIPs.length;
+  const totalPages =
+    totalItems > 0 ? Math.max(1, Math.ceil(totalItems / pageSize)) : 0;
+  const hasRows = visibleIPs.length > 0;
+  const startIndex = totalItems === 0 ? 0 : Math.min((page - 1) * pageSize + 1, totalItems);
+  const endIndex = Math.min(page * pageSize, totalItems);
   const ipColumnClass = showProxyColumn ? "col-span-3" : "col-span-4";
   const locationColumnClass = "col-span-2";
   const domainCountColumnClass = showProxyColumn ? "col-span-1" : "col-span-2";
@@ -238,17 +339,14 @@ export function IPStatsTable({
             <div>
               <h3 className="text-base font-semibold">{title || t("associatedIPs")}</h3>
               <p className="text-sm text-muted-foreground">
-                {filteredIPs.length} {t("ipsCount")}
+                {totalItems} {t("ipsCount")}
               </p>
             </div>
             <div className="relative">
               <Input
                 placeholder={t("search")}
                 value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setPage(1);
-                }}
+                onChange={(e) => handleSearchInputChange(e.target.value)}
                 className="h-9 w-full sm:w-[240px] bg-secondary/50 border-0"
               />
             </div>
@@ -259,7 +357,7 @@ export function IPStatsTable({
       <CardContent className="p-0">
         {loading ? (
           <InsightTableSkeleton />
-        ) : filteredIPs.length === 0 ? (
+        ) : !hasRows ? (
           <div className="text-center py-12 text-muted-foreground">
             {search ? t("noResults") : t("noData")}
           </div>
@@ -331,7 +429,7 @@ export function IPStatsTable({
             </div>
 
             <div className="divide-y divide-border/30">
-              {paginatedIPs.map((ip) => {
+              {visibleIPs.map((ip) => {
                 const isDesktopExpanded = expandedIP === ip.ip;
                 const isMobileActive = mobileDetailsOpen && mobileDetailIP?.ip === ip.ip;
                 const geo = normalizeGeoIP(ip.geoIP);
@@ -577,7 +675,7 @@ export function IPStatsTable({
               </DrawerContent>
             </Drawer>
 
-            {filteredIPs.length > 0 && (
+            {totalItems > 0 && (
               <div className="p-3 border-t border-border/50 bg-secondary/20">
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
@@ -592,10 +690,7 @@ export function IPStatsTable({
                         {PAGE_SIZE_OPTIONS.map((size) => (
                           <DropdownMenuItem
                             key={size}
-                            onClick={() => {
-                              setEffectivePageSize(size);
-                              setPage(1);
-                            }}
+                            onClick={() => setEffectivePageSize(size)}
                             className={pageSize === size ? "bg-primary/10" : ""}
                           >
                             {size} / {t("page")}
@@ -606,15 +701,15 @@ export function IPStatsTable({
                   </div>
                   <div className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2">
                     <p className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
-                      {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, filteredIPs.length)} / {filteredIPs.length}
+                      {startIndex}-{endIndex} / {totalItems}
                     </p>
                     <div className="flex items-center gap-1">
                       <Button
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8"
-                        onClick={() => setPage((p) => Math.max(1, p - 1))}
-                        disabled={page === 1}
+                        onClick={() => setEffectivePage(Math.max(1, page - 1))}
+                        disabled={page <= 1}
                       >
                         <ChevronLeft className="h-4 w-4" />
                       </Button>
@@ -629,7 +724,7 @@ export function IPStatsTable({
                             variant={page === p ? "default" : "ghost"}
                             size="sm"
                             className="h-8 w-8 px-0 text-xs"
-                            onClick={() => setPage(p as number)}
+                            onClick={() => setEffectivePage(p as number)}
                           >
                             {p}
                           </Button>
@@ -639,8 +734,8 @@ export function IPStatsTable({
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8"
-                        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                        disabled={page === totalPages}
+                        onClick={() => setEffectivePage(Math.min(totalPages, page + 1))}
+                        disabled={page >= totalPages}
                       >
                         <ChevronRight className="h-4 w-4" />
                       </Button>

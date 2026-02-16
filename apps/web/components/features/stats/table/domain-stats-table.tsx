@@ -23,7 +23,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { formatBytes, formatNumber } from "@/lib/utils";
+import { formatBytes, formatDuration, formatNumber } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { api, type TimeRange } from "@/lib/api";
 import { useStableTimeRange } from "@/lib/hooks/use-stable-time-range";
@@ -38,7 +38,12 @@ import { DomainPreview } from "@/components/features/domains/domain-preview";
 import { DomainExpandedDetails } from "./expanded-details";
 import { ProxyChainBadge } from "@/components/features/proxies/proxy-chain-badge";
 import { ExpandReveal } from "@/components/ui/expand-reveal";
-import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 import { InsightTableSkeleton } from "@/components/ui/insight-skeleton";
 import {
   PAGE_SIZE_OPTIONS,
@@ -48,7 +53,10 @@ import {
   type SortOrder,
 } from "@/lib/stats-utils";
 import type { DomainStats } from "@neko-master/shared";
+
 const DETAIL_QUERY_STALE_MS = 30_000;
+
+type DomainTableMode = "local" | "remote";
 
 interface DomainStatsTableProps {
   domains: DomainStats[];
@@ -64,6 +72,18 @@ interface DomainStatsTableProps {
   richExpand?: boolean;
   showProxyColumn?: boolean;
   showProxyTrafficInExpand?: boolean;
+  showLastSeenColumn?: boolean;
+  mode?: DomainTableMode;
+  searchValue?: string;
+  onSearchChange?: (value: string) => void;
+  sortKeyValue?: DomainSortKey;
+  sortOrderValue?: SortOrder;
+  onSortChange?: (key: DomainSortKey) => void;
+  pageValue?: number;
+  totalValue?: number;
+  onPageChange?: (page: number) => void;
+  ruleName?: string;
+  contextKey?: string | number;
 }
 
 export function DomainStatsTable({
@@ -80,19 +100,39 @@ export function DomainStatsTable({
   richExpand = false,
   showProxyColumn = true,
   showProxyTrafficInExpand = true,
+  showLastSeenColumn = false,
+  mode = "local",
+  searchValue,
+  onSearchChange,
+  sortKeyValue,
+  sortOrderValue,
+  onSortChange,
+  pageValue,
+  totalValue,
+  onPageChange,
+  ruleName,
+  contextKey,
 }: DomainStatsTableProps) {
   const t = useTranslations("domains");
   const detailTimeRange = useStableTimeRange(timeRange);
+  const isRemoteMode = mode === "remote";
 
-  const [page, setPage] = useState(1);
+  const [internalPage, setInternalPage] = useState(1);
   const [internalPageSize, setInternalPageSize] = useState<PageSize>(10);
-  const pageSize = controlledPageSize ?? internalPageSize;
-  const [search, setSearch] = useState("");
-  const [sortKey, setSortKey] = useState<DomainSortKey>("totalDownload");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+  const [internalSearch, setInternalSearch] = useState("");
+  const [internalSortKey, setInternalSortKey] =
+    useState<DomainSortKey>("totalDownload");
+  const [internalSortOrder, setInternalSortOrder] = useState<SortOrder>("desc");
   const [expandedDomain, setExpandedDomain] = useState<string | null>(null);
   const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false);
-  const [mobileDetailDomain, setMobileDetailDomain] = useState<DomainStats | null>(null);
+  const [mobileDetailDomain, setMobileDetailDomain] =
+    useState<DomainStats | null>(null);
+
+  const pageSize = controlledPageSize ?? internalPageSize;
+  const page = isRemoteMode ? pageValue ?? 1 : internalPage;
+  const search = isRemoteMode ? searchValue ?? "" : internalSearch;
+  const sortKey = isRemoteMode ? sortKeyValue ?? "totalDownload" : internalSortKey;
+  const sortOrder = isRemoteMode ? sortOrderValue ?? "desc" : internalSortOrder;
   const detailDomainKey = mobileDetailsOpen
     ? (mobileDetailDomain?.domain ?? null)
     : expandedDomain;
@@ -102,33 +142,49 @@ export function DomainStatsTable({
     setExpandedDomain(null);
     setMobileDetailsOpen(false);
     setMobileDetailDomain(null);
-  }, [activeBackendId, sourceIP, sourceChain, richExpand]);
+  }, [activeBackendId, sourceIP, sourceChain, richExpand, ruleName, contextKey]);
 
   useEffect(() => {
-    setPage(1);
-  }, [pageSize]);
-
-  const setEffectivePageSize = (size: PageSize) => {
-    if (onPageSizeChange) {
-      onPageSizeChange(size);
-      return;
+    if (!isRemoteMode) {
+      setInternalPage(1);
+      setInternalSearch("");
+      setInternalSortKey("totalDownload");
+      setInternalSortOrder("desc");
     }
-    setInternalPageSize(size);
-  };
+  }, [contextKey, isRemoteMode]);
+
+  useEffect(() => {
+    if (!isRemoteMode) {
+      setInternalPage(1);
+    }
+  }, [pageSize, isRemoteMode]);
 
   const expandedDomainProxyQuery = useQuery({
-    queryKey: getDomainProxyStatsQueryKey(detailDomainKey, activeBackendId, detailTimeRange, {
-      sourceIP,
-      sourceChain,
-    }),
-    queryFn: () =>
-      api.getDomainProxyStats(
-        detailDomainKey!,
-        activeBackendId,
-        detailTimeRange,
+    queryKey: getDomainProxyStatsQueryKey(
+      detailDomainKey,
+      activeBackendId,
+      detailTimeRange,
+      {
         sourceIP,
         sourceChain,
-      ),
+        rule: ruleName,
+      },
+    ),
+    queryFn: () =>
+      ruleName
+        ? api.getRuleDomainProxyStats(
+            ruleName,
+            detailDomainKey!,
+            activeBackendId,
+            detailTimeRange,
+          )
+        : api.getDomainProxyStats(
+            detailDomainKey!,
+            activeBackendId,
+            detailTimeRange,
+            sourceIP,
+            sourceChain,
+          ),
     enabled: richExpand && !!activeBackendId && !!detailDomainKey,
     staleTime: DETAIL_QUERY_STALE_MS,
     placeholderData: (previousData, previousQuery) =>
@@ -137,22 +193,36 @@ export function DomainStatsTable({
         backendId: activeBackendId ?? null,
         sourceIP: sourceIP ?? "",
         sourceChain: sourceChain ?? "",
+        rule: ruleName ?? "",
       }),
   });
 
   const expandedDomainIPDetailsQuery = useQuery({
-    queryKey: getDomainIPDetailsQueryKey(detailDomainKey, activeBackendId, detailTimeRange, {
-      sourceIP,
-      sourceChain,
-    }),
-    queryFn: () =>
-      api.getDomainIPDetails(
-        detailDomainKey!,
-        activeBackendId,
-        detailTimeRange,
+    queryKey: getDomainIPDetailsQueryKey(
+      detailDomainKey,
+      activeBackendId,
+      detailTimeRange,
+      {
         sourceIP,
         sourceChain,
-      ),
+        rule: ruleName,
+      },
+    ),
+    queryFn: () =>
+      ruleName
+        ? api.getRuleDomainIPDetails(
+            ruleName,
+            detailDomainKey!,
+            activeBackendId,
+            detailTimeRange,
+          )
+        : api.getDomainIPDetails(
+            detailDomainKey!,
+            activeBackendId,
+            detailTimeRange,
+            sourceIP,
+            sourceChain,
+          ),
     enabled: richExpand && !!activeBackendId && !!detailDomainKey,
     staleTime: DETAIL_QUERY_STALE_MS,
     placeholderData: (previousData, previousQuery) =>
@@ -161,17 +231,55 @@ export function DomainStatsTable({
         backendId: activeBackendId ?? null,
         sourceIP: sourceIP ?? "",
         sourceChain: sourceChain ?? "",
+        rule: ruleName ?? "",
       }),
   });
 
-  const handleSort = (key: DomainSortKey) => {
-    if (sortKey === key) {
-      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
-    } else {
-      setSortKey(key);
-      setSortOrder("desc");
+  const setEffectivePage = (nextPage: number) => {
+    if (isRemoteMode) {
+      onPageChange?.(nextPage);
+      return;
     }
-    setPage(1);
+    setInternalPage(nextPage);
+  };
+
+  const setEffectivePageSize = (size: PageSize) => {
+    if (onPageSizeChange) {
+      onPageSizeChange(size);
+    } else {
+      setInternalPageSize(size);
+    }
+
+    if (isRemoteMode) {
+      onPageChange?.(1);
+    } else {
+      setInternalPage(1);
+    }
+  };
+
+  const handleSearchInputChange = (value: string) => {
+    if (isRemoteMode) {
+      onSearchChange?.(value);
+      onPageChange?.(1);
+      return;
+    }
+    setInternalSearch(value);
+    setInternalPage(1);
+  };
+
+  const handleSort = (key: DomainSortKey) => {
+    if (isRemoteMode) {
+      onSortChange?.(key);
+      return;
+    }
+
+    if (internalSortKey === key) {
+      setInternalSortOrder(internalSortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setInternalSortKey(key);
+      setInternalSortOrder("desc");
+    }
+    setInternalPage(1);
   };
 
   const toggleExpand = (domain: string) => {
@@ -192,7 +300,9 @@ export function DomainStatsTable({
   };
 
   const SortIcon = ({ column }: { column: DomainSortKey }) => {
-    if (sortKey !== column) return <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground" />;
+    if (sortKey !== column) {
+      return <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground" />;
+    }
     return sortOrder === "asc" ? (
       <ArrowUp className="ml-1 h-3 w-3 text-primary" />
     ) : (
@@ -201,6 +311,10 @@ export function DomainStatsTable({
   };
 
   const filteredDomains = useMemo(() => {
+    if (isRemoteMode) {
+      return domains;
+    }
+
     let result = [...domains];
     if (search) {
       const lower = search.toLowerCase();
@@ -215,15 +329,25 @@ export function DomainStatsTable({
       return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
     });
     return result;
-  }, [domains, search, sortKey, sortOrder]);
+  }, [domains, isRemoteMode, search, sortKey, sortOrder]);
 
-  const paginatedDomains = useMemo(() => {
+  const visibleDomains = useMemo(() => {
+    if (isRemoteMode) {
+      return domains;
+    }
     const start = (page - 1) * pageSize;
     return filteredDomains.slice(start, start + pageSize);
-  }, [filteredDomains, page, pageSize]);
+  }, [domains, filteredDomains, isRemoteMode, page, pageSize]);
 
-  const totalPages = Math.ceil(filteredDomains.length / pageSize);
+  const totalItems = isRemoteMode ? totalValue ?? domains.length : filteredDomains.length;
+  const totalPages =
+    totalItems > 0 ? Math.max(1, Math.ceil(totalItems / pageSize)) : 0;
   const domainColumnClass = showProxyColumn ? "col-span-3" : "col-span-5";
+  const uploadColumnClass = showLastSeenColumn ? "col-span-1" : "col-span-2";
+  const ipCountColumnClass = "col-span-2";
+  const hasRows = visibleDomains.length > 0;
+  const startIndex = totalItems === 0 ? 0 : Math.min((page - 1) * pageSize + 1, totalItems);
+  const endIndex = Math.min(page * pageSize, totalItems);
 
   return (
     <Card>
@@ -231,19 +355,18 @@ export function DomainStatsTable({
         <div className="p-4 border-b border-border/50">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
-              <h3 className="text-base font-semibold">{title || t("associatedDomains")}</h3>
+              <h3 className="text-base font-semibold">
+                {title || t("associatedDomains")}
+              </h3>
               <p className="text-sm text-muted-foreground">
-                {filteredDomains.length} {t("domainsCount")}
+                {totalItems} {t("domainsCount")}
               </p>
             </div>
             <div className="relative">
               <Input
                 placeholder={t("search")}
                 value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setPage(1);
-                }}
+                onChange={(e) => handleSearchInputChange(e.target.value)}
                 className="h-9 w-full sm:w-[240px] bg-secondary/50 border-0"
               />
             </div>
@@ -254,7 +377,7 @@ export function DomainStatsTable({
       <CardContent className="p-0">
         {loading ? (
           <InsightTableSkeleton />
-        ) : filteredDomains.length === 0 ? (
+        ) : !hasRows ? (
           <div className="text-center py-12 text-muted-foreground">
             {search ? t("noResults") : t("noData")}
           </div>
@@ -282,7 +405,10 @@ export function DomainStatsTable({
                 <SortIcon column="totalDownload" />
               </div>
               <div
-                className="col-span-2 flex items-center justify-end cursor-pointer hover:text-foreground transition-colors"
+                className={cn(
+                  uploadColumnClass,
+                  "flex items-center justify-end cursor-pointer hover:text-foreground transition-colors",
+                )}
                 onClick={() => handleSort("totalUpload")}
               >
                 {t("upload")}
@@ -295,7 +421,19 @@ export function DomainStatsTable({
                 {t("conn")}
                 <SortIcon column="totalConnections" />
               </div>
-              <div className="col-span-2 flex items-center justify-end">{t("ipCount")}</div>
+              {showLastSeenColumn && (
+                <div className="col-span-1 flex items-center justify-end">
+                  {t("last")}
+                </div>
+              )}
+              <div
+                className={cn(
+                  ipCountColumnClass,
+                  "flex items-center justify-end",
+                )}
+              >
+                {t("ipCount")}
+              </div>
             </div>
 
             <div className="sm:hidden flex items-center gap-2 px-4 py-2 bg-secondary/30 overflow-x-auto scrollbar-hide">
@@ -303,7 +441,10 @@ export function DomainStatsTable({
                 { key: "domain" as DomainSortKey, label: t("domain") },
                 { key: "totalDownload" as DomainSortKey, label: t("download") },
                 { key: "totalUpload" as DomainSortKey, label: t("upload") },
-                { key: "totalConnections" as DomainSortKey, label: t("conn") },
+                {
+                  key: "totalConnections" as DomainSortKey,
+                  label: t("conn"),
+                },
               ]).map(({ key, label }) => (
                 <button
                   key={key}
@@ -317,13 +458,17 @@ export function DomainStatsTable({
                 >
                   {label}
                   {sortKey === key &&
-                    (sortOrder === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+                    (sortOrder === "asc" ? (
+                      <ArrowUp className="h-3 w-3" />
+                    ) : (
+                      <ArrowDown className="h-3 w-3" />
+                    ))}
                 </button>
               ))}
             </div>
 
             <div className="divide-y divide-border/30">
-              {paginatedDomains.map((domain, index) => {
+              {visibleDomains.map((domain, index) => {
                 const isDesktopExpanded = expandedDomain === domain.domain;
                 const isMobileActive =
                   mobileDetailsOpen && mobileDetailDomain?.domain === domain.domain;
@@ -359,7 +504,12 @@ export function DomainStatsTable({
                         <span className="text-blue-500">{formatBytes(domain.totalDownload)}</span>
                       </div>
 
-                      <div className="col-span-2 text-right tabular-nums text-sm whitespace-nowrap">
+                      <div
+                        className={cn(
+                          uploadColumnClass,
+                          "text-right tabular-nums text-sm whitespace-nowrap",
+                        )}
+                      >
                         <span className="text-purple-500">{formatBytes(domain.totalUpload)}</span>
                       </div>
 
@@ -369,7 +519,20 @@ export function DomainStatsTable({
                         </span>
                       </div>
 
-                      <div className="col-span-2 flex items-center justify-end">
+                      {showLastSeenColumn && (
+                        <div className="col-span-1 text-right">
+                          <p className="text-xs text-muted-foreground">
+                            {formatDuration(domain.lastSeen)}
+                          </p>
+                        </div>
+                      )}
+
+                      <div
+                        className={cn(
+                          ipCountColumnClass,
+                          "flex items-center justify-end",
+                        )}
+                      >
                         <Button
                           variant="ghost"
                           size="sm"
@@ -417,7 +580,9 @@ export function DomainStatsTable({
                           size="sm"
                           className={cn(
                             "h-7 px-2 gap-1 text-xs font-medium shrink-0",
-                            isMobileActive ? "bg-primary/10 text-primary" : "bg-secondary/50 text-muted-foreground",
+                            isMobileActive
+                              ? "bg-primary/10 text-primary"
+                              : "bg-secondary/50 text-muted-foreground",
                           )}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -426,7 +591,11 @@ export function DomainStatsTable({
                         >
                           <Server className="h-3 w-3" />
                           {domain.ips?.length || 0}
-                          {isMobileActive ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                          {isMobileActive ? (
+                            <ChevronUp className="h-3 w-3" />
+                          ) : (
+                            <ChevronDown className="h-3 w-3" />
+                          )}
                         </Button>
                       </div>
 
@@ -441,8 +610,12 @@ export function DomainStatsTable({
                       )}
 
                       <div className="flex items-center justify-between text-xs pl-[30px]">
-                        <span className="text-blue-500 tabular-nums whitespace-nowrap">↓ {formatBytes(domain.totalDownload)}</span>
-                        <span className="text-purple-500 tabular-nums whitespace-nowrap">↑ {formatBytes(domain.totalUpload)}</span>
+                        <span className="text-blue-500 tabular-nums whitespace-nowrap">
+                          ↓ {formatBytes(domain.totalDownload)}
+                        </span>
+                        <span className="text-purple-500 tabular-nums whitespace-nowrap">
+                          ↑ {formatBytes(domain.totalUpload)}
+                        </span>
                         <span className="px-2 py-0.5 rounded-full bg-secondary text-muted-foreground font-medium">
                           {formatNumber(domain.totalConnections)} {t("conn")}
                         </span>
@@ -526,13 +699,17 @@ export function DomainStatsTable({
               </DrawerContent>
             </Drawer>
 
-            {filteredDomains.length > 0 && (
+            {totalItems > 0 && (
               <div className="p-3 border-t border-border/50 bg-secondary/20">
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-muted-foreground hover:text-foreground">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 gap-1.5 text-muted-foreground hover:text-foreground"
+                        >
                           <Rows3 className="h-4 w-4" />
                           <span>{pageSize} / {t("page")}</span>
                         </Button>
@@ -541,10 +718,7 @@ export function DomainStatsTable({
                         {PAGE_SIZE_OPTIONS.map((size) => (
                           <DropdownMenuItem
                             key={size}
-                            onClick={() => {
-                              setEffectivePageSize(size);
-                              setPage(1);
-                            }}
+                            onClick={() => setEffectivePageSize(size)}
                             className={pageSize === size ? "bg-primary/10" : ""}
                           >
                             {size} / {t("page")}
@@ -555,15 +729,15 @@ export function DomainStatsTable({
                   </div>
                   <div className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2">
                     <p className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
-                      {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, filteredDomains.length)} / {filteredDomains.length}
+                      {startIndex}-{endIndex} / {totalItems}
                     </p>
                     <div className="flex items-center gap-1">
                       <Button
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8"
-                        onClick={() => setPage((p) => Math.max(1, p - 1))}
-                        disabled={page === 1}
+                        onClick={() => setEffectivePage(Math.max(1, page - 1))}
+                        disabled={page <= 1}
                       >
                         <ChevronLeft className="h-4 w-4" />
                       </Button>
@@ -578,7 +752,7 @@ export function DomainStatsTable({
                             variant={page === p ? "default" : "ghost"}
                             size="sm"
                             className="h-8 w-8 px-0 text-xs"
-                            onClick={() => setPage(p as number)}
+                            onClick={() => setEffectivePage(p as number)}
                           >
                             {p}
                           </Button>
@@ -588,8 +762,8 @@ export function DomainStatsTable({
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8"
-                        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                        disabled={page === totalPages}
+                        onClick={() => setEffectivePage(Math.min(totalPages, page + 1))}
+                        disabled={page >= totalPages}
                       >
                         <ChevronRight className="h-4 w-4" />
                       </Button>
