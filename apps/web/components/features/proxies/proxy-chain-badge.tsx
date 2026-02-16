@@ -14,6 +14,7 @@ import {
 interface ProxyChainBadgeProps {
   chains?: string[] | null;
   truncateLabel?: boolean;
+  interactive?: boolean;
   wrapperClassName?: string;
   badgeClassName?: string;
   countClassName?: string;
@@ -132,6 +133,7 @@ function ChainFlow({
 export function ProxyChainBadge({
   chains,
   truncateLabel = true,
+  interactive = true,
   wrapperClassName,
   badgeClassName,
   countClassName,
@@ -162,6 +164,16 @@ export function ProxyChainBadge({
       +{chains.length - 1}
     </span>
   ) : null;
+  const renderLabel = () => (
+    <>
+      <span className={labelClassName}>
+        <Waypoints className="h-2.5 w-2.5 shrink-0" />
+        {landingProxy}
+      </span>
+      {extraCount}
+    </>
+  );
+
   const renderTrigger = () => (
     <button
       type="button"
@@ -169,11 +181,7 @@ export function ProxyChainBadge({
       onClick={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <span className={labelClassName}>
-        <Waypoints className="h-2.5 w-2.5 shrink-0" />
-        {landingProxy}
-      </span>
-      {extraCount}
+      {renderLabel()}
     </button>
   );
   const renderChainDetails = (mobile = false) => (
@@ -200,6 +208,14 @@ export function ProxyChainBadge({
       ))}
     </div>
   );
+
+  if (!interactive) {
+    return (
+      <span className={triggerClassName}>
+        {renderLabel()}
+      </span>
+    );
+  }
 
   return (
     <>

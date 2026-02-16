@@ -19,6 +19,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CountryFlag } from "@/components/features/countries";
+import { CopyIconButton } from "@/components/common/copy-icon-button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -445,6 +446,7 @@ export function IPStatsTable({
                           asOrganizationLabel={t("asOrganization")}
                           className="flex-1"
                           triggerClassName="font-mono"
+                          interactive={false}
                         />
                         <Button
                           variant="ghost"
@@ -472,7 +474,11 @@ export function IPStatsTable({
                           </span>
                         )}
                         {showProxyColumn && ip.chains && ip.chains.length > 0 && (
-                          <ProxyChainBadge chains={ip.chains} truncateLabel={false} />
+                          <ProxyChainBadge
+                            chains={ip.chains}
+                            truncateLabel={false}
+                            interactive={false}
+                          />
                         )}
                       </div>
 
@@ -524,9 +530,17 @@ export function IPStatsTable({
                     <div className={`w-5 h-5 rounded-md bg-gradient-to-br ${mobileDetailIPGradient} flex items-center justify-center shrink-0`}>
                       <Server className="w-3 h-3 text-white" />
                     </div>
-                    <DrawerTitle className="truncate text-left font-mono text-[15px] font-semibold leading-6">
-                      {mobileDetailIP?.ip || t("unknownIP")}
-                    </DrawerTitle>
+                    <div className="min-w-0 flex-1">
+                      <DrawerTitle className="text-left font-mono text-[15px] font-semibold leading-5 break-all">
+                        {mobileDetailIP?.ip || t("unknownIP")}
+                      </DrawerTitle>
+                    </div>
+                    <CopyIconButton
+                      value={mobileDetailIP?.ip || ""}
+                      copyLabel={t("copyIP")}
+                      copiedLabel={t("copied")}
+                      disabled={!mobileDetailIP?.ip}
+                    />
                   </div>
                 </DrawerHeader>
                 <div className="max-h-[76vh] overflow-y-auto pb-[max(env(safe-area-inset-bottom),0px)]">
@@ -551,6 +565,9 @@ export function IPStatsTable({
                         conn: t("conn"),
                       }}
                       showProxyTraffic={showProxyTrafficInExpand}
+                      showFullProxyChains
+                      disableNestedInteractions
+                      showIPLookupDetails
                     />
                   ) : null}
                 </div>

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { InsightTableSkeleton } from "@/components/ui/insight-skeleton";
 import { Favicon } from "@/components/common/favicon";
+import { CopyIconButton } from "@/components/common/copy-icon-button";
 import { DomainPreview } from "@/components/features/domains/domain-preview";
 import { DomainExpandedDetails } from "@/components/features/stats/table/expanded-details";
 import { ProxyChainBadge } from "@/components/features/proxies/proxy-chain-badge";
@@ -492,6 +493,7 @@ export function DomainsTable({
                         unknownLabel={t("unknown")}
                         copyLabel={t("copyDomain")}
                         copiedLabel={t("copied")}
+                        interactive={false}
                       />
                     </div>
                     <Button
@@ -517,7 +519,11 @@ export function DomainsTable({
                   {/* Row 2: Proxy tag - full width, no truncation */}
                   {domain.chains && domain.chains.length > 0 && (
                     <div className="flex items-center gap-1.5 mb-2 pl-[30px]">
-                      <ProxyChainBadge chains={domain.chains} truncateLabel={false} />
+                      <ProxyChainBadge
+                        chains={domain.chains}
+                        truncateLabel={false}
+                        interactive={false}
+                      />
                     </div>
                   )}
 
@@ -567,9 +573,17 @@ export function DomainsTable({
           <DrawerHeader className="border-b border-border/60 bg-background/95 px-5 pt-2 pb-2.5">
             <div className="flex items-center gap-2.5 min-w-0 rounded-md border border-border/60 bg-muted/25 px-2.5 py-2">
               <Favicon domain={mobileDetailDomain?.domain || ""} size="sm" className="shrink-0" />
-              <DrawerTitle className="truncate text-left text-[15px] font-semibold leading-6">
-                {mobileDetailDomain?.domain || t("unknown")}
-              </DrawerTitle>
+              <div className="min-w-0 flex-1">
+                <DrawerTitle className="text-left text-[15px] font-semibold leading-5 break-all">
+                  {mobileDetailDomain?.domain || t("unknown")}
+                </DrawerTitle>
+              </div>
+              <CopyIconButton
+                value={mobileDetailDomain?.domain || ""}
+                copyLabel={t("copyDomain")}
+                copiedLabel={t("copied")}
+                disabled={!mobileDetailDomain?.domain}
+              />
             </div>
           </DrawerHeader>
           <div className="max-h-[76vh] overflow-y-auto pb-[max(env(safe-area-inset-bottom),0px)]">
@@ -591,6 +605,7 @@ export function DomainsTable({
                   associatedIPs: t("associatedIPs"),
                   conn: t("conn"),
                 }}
+                showFullProxyChains
               />
             ) : null}
           </div>

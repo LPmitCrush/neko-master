@@ -20,6 +20,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { InsightTableSkeleton } from "@/components/ui/insight-skeleton";
+import { CopyIconButton } from "@/components/common/copy-icon-button";
 import { CountryFlag } from "@/components/features/countries/country-flag";
 import { formatBytes, formatNumber } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -556,6 +557,7 @@ export function IPsTable({
                         asnLabel={t("asn")}
                         asOrganizationLabel={t("asOrganization")}
                         triggerClassName="font-mono font-medium"
+                        interactive={false}
                       />
                     </div>
                     <Button
@@ -592,7 +594,11 @@ export function IPsTable({
                       </span>
                     )}
                     {ip.chains && ip.chains.length > 0 && (
-                      <ProxyChainBadge chains={ip.chains} truncateLabel={false} />
+                      <ProxyChainBadge
+                        chains={ip.chains}
+                        truncateLabel={false}
+                        interactive={false}
+                      />
                     )}
                   </div>
 
@@ -651,9 +657,17 @@ export function IPsTable({
               >
                 <Server className="w-3 h-3" />
               </div>
-              <DrawerTitle className="truncate text-left font-mono text-[15px] font-semibold leading-6">
-                {mobileDetailIP?.ip || t("unknownIP")}
-              </DrawerTitle>
+              <div className="min-w-0 flex-1">
+                <DrawerTitle className="text-left font-mono text-[15px] font-semibold leading-5 break-all">
+                  {mobileDetailIP?.ip || t("unknownIP")}
+                </DrawerTitle>
+              </div>
+              <CopyIconButton
+                value={mobileDetailIP?.ip || ""}
+                copyLabel={t("copyIP")}
+                copiedLabel={t("copied")}
+                disabled={!mobileDetailIP?.ip}
+              />
             </div>
           </DrawerHeader>
           <div className="max-h-[76vh] overflow-y-auto pb-[max(env(safe-area-inset-bottom),0px)]">
@@ -676,6 +690,9 @@ export function IPsTable({
                   associatedDomains: t("associatedDomains"),
                   conn: t("conn"),
                 }}
+                showFullProxyChains
+                disableNestedInteractions
+                showIPLookupDetails
               />
             ) : null}
           </div>

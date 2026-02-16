@@ -12,6 +12,7 @@ interface DomainPreviewProps {
   unknownLabel: string;
   copyLabel: string;
   copiedLabel: string;
+  interactive?: boolean;
   className?: string;
   triggerClassName?: string;
 }
@@ -21,6 +22,7 @@ export function DomainPreview({
   unknownLabel,
   copyLabel,
   copiedLabel,
+  interactive = true,
   className,
   triggerClassName,
 }: DomainPreviewProps) {
@@ -47,6 +49,21 @@ export function DomainPreview({
       setCopied(false);
     }
   }, []);
+
+  if (!interactive) {
+    return (
+      <div className={cn("min-w-0", className)}>
+        <span
+          className={cn(
+            "block w-full min-w-0 truncate text-left text-sm font-medium text-foreground/95",
+            triggerClassName,
+          )}
+        >
+          {domainText}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className={cn("min-w-0", className)} onClick={(event) => event.stopPropagation()}>

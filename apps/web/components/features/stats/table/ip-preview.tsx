@@ -20,6 +20,7 @@ interface IPPreviewProps {
   cityLabel: string;
   asnLabel: string;
   asOrganizationLabel: string;
+  interactive?: boolean;
   className?: string;
   triggerClassName?: string;
 }
@@ -36,6 +37,7 @@ export function IPPreview({
   cityLabel,
   asnLabel,
   asOrganizationLabel,
+  interactive = true,
   className,
   triggerClassName,
 }: IPPreviewProps) {
@@ -70,6 +72,21 @@ export function IPPreview({
       setCopied(false);
     }
   }, []);
+
+  if (!interactive) {
+    return (
+      <div className={cn("min-w-0", className)}>
+        <span
+          className={cn(
+            "block w-full min-w-0 truncate text-left text-sm text-foreground/95",
+            triggerClassName,
+          )}
+        >
+          {ipText}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className={cn("min-w-0", className)} onClick={(event) => event.stopPropagation()}>

@@ -35,6 +35,7 @@ import {
 } from "@/hooks/api/use-rule-details";
 import { CountryFlag } from "@/components/features/countries/country-flag";
 import { Favicon } from "@/components/common/favicon";
+import { CopyIconButton } from "@/components/common/copy-icon-button";
 import { DomainPreview } from "@/components/features/domains/domain-preview";
 import { ProxyChainBadge } from "@/components/features/proxies/proxy-chain-badge";
 import { DomainExpandedDetails, IPExpandedDetails } from "@/components/features/stats/table/expanded-details";
@@ -1266,6 +1267,7 @@ export function InteractiveRuleStats({
                                     unknownLabel={domainsT("unknown")}
                                     copyLabel={domainsT("copyDomain")}
                                     copiedLabel={domainsT("copied")}
+                                    interactive={false}
                                   />
                                   <Button
                                     variant="ghost"
@@ -1290,7 +1292,11 @@ export function InteractiveRuleStats({
                                 {/* Proxy row */}
                                 {domain.chains && domain.chains.length > 0 && (
                                   <div className="flex items-center gap-1.5 mb-2 pl-[30px]">
-                                    <ProxyChainBadge chains={domain.chains} truncateLabel={false} />
+                                    <ProxyChainBadge
+                                      chains={domain.chains}
+                                      truncateLabel={false}
+                                      interactive={false}
+                                    />
                                   </div>
                                 )}
 
@@ -1340,9 +1346,17 @@ export function InteractiveRuleStats({
                         <DrawerHeader className="border-b border-border/60 bg-background/95 px-4 pt-2 pb-2">
                           <div className="flex items-center gap-2.5 min-w-0 rounded-lg border border-border/60 bg-muted/25 px-3 py-2">
                             <Favicon domain={mobileDomainDetail?.domain || ""} size="sm" className="shrink-0" />
-                            <DrawerTitle className="truncate text-left text-[15px] font-semibold leading-6">
-                              {mobileDomainDetail?.domain || domainsT("unknown")}
-                            </DrawerTitle>
+                            <div className="min-w-0 flex-1">
+                              <DrawerTitle className="text-left text-[15px] font-semibold leading-5 break-all">
+                                {mobileDomainDetail?.domain || domainsT("unknown")}
+                              </DrawerTitle>
+                            </div>
+                            <CopyIconButton
+                              value={mobileDomainDetail?.domain || ""}
+                              copyLabel={domainsT("copyDomain")}
+                              copiedLabel={domainsT("copied")}
+                              disabled={!mobileDomainDetail?.domain}
+                            />
                           </div>
                         </DrawerHeader>
                         <div className="max-h-[76vh] overflow-y-auto pb-[max(env(safe-area-inset-bottom),0px)]">
@@ -1364,6 +1378,7 @@ export function InteractiveRuleStats({
                                 associatedIPs: domainsT("associatedIPs"),
                                 conn: domainsT("conn"),
                               }}
+                              showFullProxyChains
                             />
                           ) : null}
                         </div>
@@ -1697,7 +1712,11 @@ export function InteractiveRuleStats({
                                 {/* Proxy row */}
                                 {ip.chains && ip.chains.length > 0 && (
                                   <div className="flex items-center gap-1.5 mb-2 pl-[30px]">
-                                    <ProxyChainBadge chains={ip.chains} truncateLabel={false} />
+                                    <ProxyChainBadge
+                                      chains={ip.chains}
+                                      truncateLabel={false}
+                                      interactive={false}
+                                    />
                                   </div>
                                 )}
 
@@ -1756,9 +1775,17 @@ export function InteractiveRuleStats({
                             >
                               <Server className="w-3 h-3" />
                             </div>
-                            <DrawerTitle className="truncate text-left font-mono text-[15px] font-semibold leading-6">
-                              {mobileIPDetail?.ip || ipsT("unknownIP")}
-                            </DrawerTitle>
+                            <div className="min-w-0 flex-1">
+                              <DrawerTitle className="text-left font-mono text-[15px] font-semibold leading-5 break-all">
+                                {mobileIPDetail?.ip || ipsT("unknownIP")}
+                              </DrawerTitle>
+                            </div>
+                            <CopyIconButton
+                              value={mobileIPDetail?.ip || ""}
+                              copyLabel={ipsT("copyIP")}
+                              copiedLabel={ipsT("copied")}
+                              disabled={!mobileIPDetail?.ip}
+                            />
                           </div>
                         </DrawerHeader>
                         <div className="max-h-[76vh] overflow-y-auto pb-[max(env(safe-area-inset-bottom),0px)]">
@@ -1781,6 +1808,9 @@ export function InteractiveRuleStats({
                                 associatedDomains: ipsT("associatedDomains"),
                                 conn: ipsT("conn"),
                               }}
+                              showFullProxyChains
+                              disableNestedInteractions
+                              showIPLookupDetails
                             />
                           ) : null}
                         </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Globe, Link2, Loader2, Server, Waypoints } from "lucide-react";
+import { Building2, Globe, Link2, Loader2, MapPin, Network, Server, Waypoints } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { CountryFlag } from "@/components/features/countries";
 import { Favicon } from "@/components/common";
@@ -25,12 +25,13 @@ interface DomainExpandedDetailsProps {
     conn: string;
   };
   showProxyTraffic?: boolean;
+  showFullProxyChains?: boolean;
 }
 
 interface IPExpandedDetailsProps {
   ip: Pick<
     IPStats,
-    "ip" | "domains" | "chains" | "totalDownload" | "totalUpload"
+    "ip" | "domains" | "chains" | "totalDownload" | "totalUpload" | "asn" | "geoIP"
   >;
   richExpand?: boolean;
   proxyStats?: ProxyTrafficStats[];
@@ -44,6 +45,9 @@ interface IPExpandedDetailsProps {
   };
   associatedDomainsIcon?: "link" | "globe";
   showProxyTraffic?: boolean;
+  showFullProxyChains?: boolean;
+  disableNestedInteractions?: boolean;
+  showIPLookupDetails?: boolean;
 }
 
 function getLandingProxy(chain: string): string {
@@ -52,6 +56,15 @@ function getLandingProxy(chain: string): string {
     .map((part) => part.trim())
     .filter(Boolean);
   return parts[0] || chain;
+}
+
+function getDisplayChain(chain: string): string {
+  const parts = chain
+    .split(">")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const displayParts = parts.length > 1 ? [...parts].reverse() : parts;
+  return displayParts.join(" -> ");
 }
 
 function LoadingBlock() {
@@ -120,9 +133,33 @@ function TrafficBar({
   );
 }
 
-function ProxyFallbackChains({ chains }: { chains: string[] }) {
+function ProxyFallbackChains({
+  chains,
+  showFullProxyChains = false,
+}: {
+  chains: string[];
+  showFullProxyChains?: boolean;
+}) {
   if (!chains.length) {
     return <span className="text-xs text-muted-foreground">-</span>;
+  }
+
+  if (showFullProxyChains) {
+    return (
+      <div className="space-y-2">
+        {chains.map((chain, idx) => (
+          <div
+            key={`${chain}-${idx}`}
+            className="px-3 py-2 rounded-lg bg-card border border-border/50"
+          >
+            <span className="inline-flex items-start gap-1.5 text-xs font-medium text-foreground/90">
+              <Waypoints className="mt-0.5 h-3 w-3 text-orange-500 shrink-0" />
+              <code className="break-all leading-5">{getDisplayChain(chain)}</code>
+            </span>
+          </div>
+        ))}
+      </div>
+    );
   }
 
   const proxies = Array.from(new Set(chains.map(getLandingProxy).filter(Boolean)));
@@ -148,53 +185,65 @@ function ProxyTrafficCards({
   totalDownload,
   totalUpload,
   connLabel,
+  showFullProxyChains = false,
 }: {
   proxyStats: ProxyTrafficStats[];
   totalDownload: number;
   totalUpload: number;
   connLabel: string;
+  showFullProxyChains?: boolean;
 }) {
-  const grouped = new Map<string, ProxyTrafficStats>();
-  for (const stat of proxyStats) {
-    const proxy = getLandingProxy(stat.chain);
-    const prev = grouped.get(proxy);
-    if (prev) {
-      prev.totalDownload += stat.totalDownload;
-      prev.totalUpload += stat.totalUpload;
-      prev.totalConnections += stat.totalConnections;
-    } else {
-      grouped.set(proxy, {
-        chain: proxy,
-        totalDownload: stat.totalDownload,
-        totalUpload: stat.totalUpload,
-        totalConnections: stat.totalConnections,
-      });
-    }
-  }
-  const mergedStats = Array.from(grouped.values()).sort(
-    (a, b) =>
-      b.totalDownload + b.totalUpload - (a.totalDownload + a.totalUpload),
-  );
+  const mergedStats = showFullProxyChains
+    ? [...proxyStats].sort(
+        (a, b) =>
+          b.totalDownload + b.totalUpload - (a.totalDownload + a.totalUpload),
+      )
+    : (() => {
+        const grouped = new Map<string, ProxyTrafficStats>();
+        for (const stat of proxyStats) {
+          const proxy = getLandingProxy(stat.chain);
+          const prev = grouped.get(proxy);
+          if (prev) {
+            prev.totalDownload += stat.totalDownload;
+            prev.totalUpload += stat.totalUpload;
+            prev.totalConnections += stat.totalConnections;
+          } else {
+            grouped.set(proxy, {
+              chain: proxy,
+              totalDownload: stat.totalDownload,
+              totalUpload: stat.totalUpload,
+              totalConnections: stat.totalConnections,
+            });
+          }
+        }
+        return Array.from(grouped.values()).sort(
+          (a, b) =>
+            b.totalDownload + b.totalUpload - (a.totalDownload + a.totalUpload),
+        );
+      })();
 
   const totalTraffic = totalDownload + totalUpload;
   return (
     <div className="space-y-2">
-      {mergedStats.map((ps) => {
+      {mergedStats.map((ps, idx) => {
         const proxyTraffic = ps.totalDownload + ps.totalUpload;
         const percent = totalTraffic > 0 ? (proxyTraffic / totalTraffic) * 100 : 0;
         const proxyTotal = ps.totalDownload + ps.totalUpload;
         const downloadPercent = proxyTotal > 0 ? (ps.totalDownload / proxyTotal) * 100 : 0;
         const uploadPercent = proxyTotal > 0 ? (ps.totalUpload / proxyTotal) * 100 : 0;
+        const chainLabel = showFullProxyChains ? getDisplayChain(ps.chain) : ps.chain;
 
         return (
-          <div key={ps.chain} className="px-3 py-2 rounded-lg bg-card border border-border/50">
+          <div key={`${ps.chain}-${idx}`} className="px-3 py-2 rounded-lg bg-card border border-border/50">
             <div className="flex items-center justify-between mb-1.5">
-              <span
-                className="inline-flex items-center gap-1.5 text-xs font-medium truncate max-w-[60%]"
-                title={ps.chain}
-              >
-                <Waypoints className="h-3 w-3 text-orange-500 shrink-0" />
-                {ps.chain}
+              <span className="inline-flex items-start gap-1.5 text-xs font-medium min-w-0 max-w-[72%]">
+                <Waypoints className="mt-0.5 h-3 w-3 text-orange-500 shrink-0" />
+                <span
+                  className={showFullProxyChains ? "break-all leading-5" : "truncate"}
+                  title={chainLabel}
+                >
+                  {chainLabel}
+                </span>
               </span>
               <span className="text-[11px] text-muted-foreground tabular-nums shrink-0">
                 {percent.toFixed(1)}%
@@ -277,6 +326,7 @@ export function DomainExpandedDetails({
   ipDetailsLoading = false,
   labels,
   showProxyTraffic = true,
+  showFullProxyChains = false,
 }: DomainExpandedDetailsProps) {
   if (!richExpand) {
     return (
@@ -313,9 +363,13 @@ export function DomainExpandedDetails({
                 totalDownload={domain.totalDownload}
                 totalUpload={domain.totalUpload}
                 connLabel={labels.conn}
+                showFullProxyChains={showFullProxyChains}
               />
             ) : (
-              <ProxyFallbackChains chains={domain.chains || []} />
+              <ProxyFallbackChains
+                chains={domain.chains || []}
+                showFullProxyChains={showFullProxyChains}
+              />
             )}
           </div>
         )}
@@ -398,14 +452,83 @@ export function IPExpandedDetails({
   labels,
   associatedDomainsIcon = "link",
   showProxyTraffic = true,
+  showFullProxyChains = false,
+  disableNestedInteractions = false,
+  showIPLookupDetails = false,
 }: IPExpandedDetailsProps) {
   const AssociatedDomainsTitleIcon = associatedDomainsIcon === "globe" ? Globe : Link2;
   const domainsT = useTranslations("domains");
+  const ipsT = useTranslations("ips");
+
+  const countryCode = ip.geoIP?.[0];
+  const countryName = ip.geoIP?.[1];
+  const city = ip.geoIP?.[2] || ipsT("unknown");
+  const asOrganization = ip.geoIP?.[3] || ipsT("unknown");
+  const asnValue = ip.asn || ipsT("unknown");
+  const hasLocation = Boolean(countryCode || countryName);
+  const displayLocation = countryName || countryCode || ipsT("unknown");
+
+  const ipLookupDetails = showIPLookupDetails ? (
+    <div className="px-1">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div className="px-3 py-2 rounded-lg bg-card border border-border/50">
+          <p className="inline-flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <MapPin className="h-3 w-3" />
+            {ipsT("location")}
+          </p>
+          {hasLocation ? (
+            <span className="mt-1.5 flex min-w-0 items-center gap-1.5">
+              <CountryFlag country={countryCode || countryName || "UN"} className="h-3.5 w-5" />
+              <span className="truncate text-sm font-medium leading-5">{displayLocation}</span>
+            </span>
+          ) : (
+            <span className="mt-1.5 block truncate text-sm leading-5 text-muted-foreground">
+              {ipsT("unknown")}
+            </span>
+          )}
+        </div>
+
+        <div className="px-3 py-2 rounded-lg bg-card border border-border/50">
+          <p className="inline-flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <Building2 className="h-3 w-3" />
+            {ipsT("city")}
+          </p>
+          <span title={city} className="mt-1.5 block truncate text-sm font-medium leading-5">
+            {city}
+          </span>
+        </div>
+
+        <div className="px-3 py-2 rounded-lg bg-card border border-border/50">
+          <p className="inline-flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <Network className="h-3 w-3" />
+            {ipsT("asn")}
+          </p>
+          <span className="mt-1.5 block truncate text-sm font-semibold tabular-nums leading-5">
+            {asnValue}
+          </span>
+        </div>
+
+        <div className="px-3 py-2 rounded-lg bg-card border border-border/50">
+          <p className="inline-flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <Server className="h-3 w-3" />
+            {ipsT("asOrganization")}
+          </p>
+          <span
+            title={asOrganization}
+            className="mt-1.5 block truncate text-sm font-medium leading-5"
+          >
+            {asOrganization}
+          </span>
+        </div>
+      </div>
+    </div>
+  ) : null;
 
   if (!richExpand) {
     return (
       <div className="px-4 sm:px-5 pb-4 bg-secondary/5">
-        <div className="pt-3">
+        <div className="pt-3 space-y-3">
+          {ipLookupDetails}
           <div className="px-1">
             <p className="text-xs font-medium text-muted-foreground mb-2.5 flex items-center gap-1.5">
               <AssociatedDomainsTitleIcon className="h-3 w-3" />
@@ -425,7 +548,10 @@ export function IPExpandedDetails({
 
   return (
     <div className="px-4 sm:px-5 pb-4 bg-secondary/5">
-      <div className={showProxyTraffic ? "pt-3 grid grid-cols-1 sm:grid-cols-2 gap-4" : "pt-3"}>
+      <div className="pt-3 space-y-3">
+        {ipLookupDetails}
+
+        <div className={showProxyTraffic ? "grid grid-cols-1 sm:grid-cols-2 gap-4" : ""}>
         {showProxyTraffic && (
           <div className="px-1">
             <p className="text-xs font-medium text-muted-foreground mb-2.5 flex items-center gap-1.5">
@@ -440,9 +566,13 @@ export function IPExpandedDetails({
                 totalDownload={ip.totalDownload}
                 totalUpload={ip.totalUpload}
                 connLabel={labels.conn}
+                showFullProxyChains={showFullProxyChains}
               />
             ) : (
-              <ProxyFallbackChains chains={ip.chains || []} />
+              <ProxyFallbackChains
+                chains={ip.chains || []}
+                showFullProxyChains={showFullProxyChains}
+              />
             )}
           </div>
         )}
@@ -480,6 +610,7 @@ export function IPExpandedDetails({
                           unknownLabel={domainsT("unknown")}
                           copyLabel={domainsT("copyDomain")}
                           copiedLabel={domainsT("copied")}
+                          interactive={!disableNestedInteractions}
                         />
                       </div>
                       <span className="text-[11px] text-muted-foreground tabular-nums shrink-0">
@@ -507,6 +638,7 @@ export function IPExpandedDetails({
             <DomainFallbackChips domains={ip.domains || []} />
           )}
         </div>
+      </div>
       </div>
     </div>
   );
