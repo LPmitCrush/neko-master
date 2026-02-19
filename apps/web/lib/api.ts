@@ -522,7 +522,7 @@ export const api = {
     fetchJson<Backend[]>(`${API_BASE}/backends`),
     
   createBackend: (backend: { name: string; url: string; token?: string; type?: 'clash' | 'surge' }) =>
-    fetchJson<{ id: number; isActive?: boolean; message: string }>(`${API_BASE}/backends`, 'POST', backend),
+    fetchJson<{ id: number; isActive?: boolean; message: string; agentToken?: string }>(`${API_BASE}/backends`, 'POST', backend),
     
   updateBackend: (id: number, backend: { name?: string; url?: string; token?: string; type?: 'clash' | 'surge'; enabled?: boolean; listening?: boolean }) =>
     fetchJson<{ message: string }>(`${API_BASE}/backends/${id}`, 'PUT', backend),
@@ -544,6 +544,9 @@ export const api = {
 
   testBackendById: (id: number) =>
     fetchJson<{ success: boolean; message: string }>(`${API_BASE}/backends/${id}/test`, 'POST'),
+
+  rotateAgentToken: (id: number) =>
+    fetchJson<{ message: string; agentToken: string }>(`${API_BASE}/backends/${id}/rotate-agent-token`, 'POST'),
     
   // Database management
   getDbStats: async () => {

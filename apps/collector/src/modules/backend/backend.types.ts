@@ -82,4 +82,10 @@ export interface CreateBackendResult {
   id: number;
   isActive: boolean;
   message: string;
+  agentToken?: string;
+}
+
+export interface RotateAgentTokenResult {
+  message: string;
+  agentToken: string;
 }

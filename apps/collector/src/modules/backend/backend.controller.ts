@@ -155,6 +155,24 @@ const backendController: FastifyPluginAsync = async (fastify: FastifyInstance): 
     return result;
   });
 
+  // Rotate agent token for a backend
+  fastify.post<{ Params: BackendParams }>('/:id/rotate-agent-token', async (request, reply) => {
+    if (fastify.authService.isShowcaseMode()) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+
+    const { id } = request.params;
+    const backendId = parseInt(id);
+
+    const backend = service.getBackend(backendId);
+    if (!backend) {
+      return reply.status(404).send({ error: 'Backend not found' });
+    }
+
+    const result = service.rotateAgentToken(backendId);
+    return result;
+  });
+
   // Test backend connection
   fastify.post<{ Body: TestConnectionInput }>('/test', async (request, reply) => {
     if (fastify.authService.isShowcaseMode()) {

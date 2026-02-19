@@ -367,6 +367,22 @@ export const SCHEMA = {
     );
   `,
 
+  // Agent heartbeat status per backend (for agent:// passive mode)
+  AGENT_HEARTBEATS: `
+    CREATE TABLE IF NOT EXISTS agent_heartbeats (
+      backend_id INTEGER PRIMARY KEY,
+      agent_id TEXT NOT NULL,
+      hostname TEXT,
+      version TEXT,
+      gateway_type TEXT,
+      gateway_url TEXT,
+      remote_ip TEXT,
+      last_seen DATETIME NOT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (backend_id) REFERENCES backend_configs(id) ON DELETE CASCADE
+    );
+  `,
+
   // App configuration
   APP_CONFIG: `
     CREATE TABLE IF NOT EXISTS app_config (
@@ -458,6 +474,9 @@ export const INDEXES = [
   // Backend configs unique index
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_backend_configs_name ON backend_configs(name);`,
 
+  // Agent heartbeat indexes
+  `CREATE INDEX IF NOT EXISTS idx_agent_heartbeats_last_seen ON agent_heartbeats(last_seen);`,
+
   // Surge policy cache indexes
   `CREATE INDEX IF NOT EXISTS idx_surge_policy_backend ON surge_policy_cache(backend_id);`,
   `CREATE INDEX IF NOT EXISTS idx_surge_policy_updated ON surge_policy_cache(updated_at);`,
@@ -507,6 +526,7 @@ export function getAllSchemaStatements(): string[] {
     SCHEMA.RULE_DOMAIN_TRAFFIC,
     SCHEMA.RULE_IP_TRAFFIC,
     SCHEMA.BACKEND_CONFIGS,
+    SCHEMA.AGENT_HEARTBEATS,
     SCHEMA.APP_CONFIG,
     SCHEMA.SURGE_POLICY_CACHE,
     SCHEMA.AUTH_CONFIG,

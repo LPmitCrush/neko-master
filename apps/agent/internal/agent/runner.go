@@ -1,0 +1,372 @@
+package agent
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/foru17/neko-master/apps/agent/internal/config"
+	"github.com/foru17/neko-master/apps/agent/internal/domain"
+	"github.com/foru17/neko-master/apps/agent/internal/gateway"
+)
+
+type trackedFlow struct {
+	LastUpload int64
+	LastDown   int64
+	LastSeenMs int64
+}
+
+type reportPayload struct {
+	BackendID       int                    `json:"backendId"`
+	AgentID         string                 `json:"agentId"`
+	AgentVersion    string                 `json:"agentVersion,omitempty"`
+	ProtocolVersion int                    `json:"protocolVersion"`
+	Updates         []domain.TrafficUpdate `json:"updates"`
+}
+
+type heartbeatPayload struct {
+	BackendID       int    `json:"backendId"`
+	AgentID         string `json:"agentId"`
+	Hostname        string `json:"hostname,omitempty"`
+	Version         string `json:"version,omitempty"`
+	AgentVersion    string `json:"agentVersion,omitempty"`
+	ProtocolVersion int    `json:"protocolVersion"`
+	GatewayType     string `json:"gatewayType,omitempty"`
+	GatewayURL      string `json:"gatewayUrl,omitempty"`
+}
+
+type Runner struct {
+	cfg           config.Config
+	httpClient    *http.Client
+	gatewayClient *gateway.Client
+	hostname      string
+
+	mu      sync.Mutex
+	queue   []domain.TrafficUpdate
+	flows   map[string]trackedFlow
+	dropped int64
+}
+
+func NewRunner(cfg config.Config) *Runner {
+	httpClient := &http.Client{Timeout: cfg.RequestTimeout}
+	hostname, _ := os.Hostname()
+	if hostname == "" {
+		hostname = "unknown-host"
+	}
+
+	return &Runner{
+		cfg:           cfg,
+		httpClient:    httpClient,
+		gatewayClient: gateway.NewClient(httpClient, cfg.GatewayType, cfg.GatewayEndpoint, cfg.GatewayToken),
+		hostname:      hostname,
+		queue:         make([]domain.TrafficUpdate, 0, cfg.ReportBatchSize*2),
+		flows:         make(map[string]trackedFlow, 2048),
+	}
+}
+
+func (r *Runner) Run(ctx context.Context) {
+	log.Printf("[agent:%s] starting, backend=%d, gateway_type=%s, server=%s", r.cfg.AgentID, r.cfg.BackendID, r.cfg.GatewayType, r.cfg.ServerAPIBase)
+
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go r.runCollectorLoop(ctx, &wg)
+	go r.runReportLoop(ctx, &wg)
+	go r.runHeartbeatLoop(ctx, &wg)
+
+	<-ctx.Done()
+	log.Printf("[agent:%s] stopping...", r.cfg.AgentID)
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := r.flushOnce(shutdownCtx); err != nil {
+		log.Printf("[agent:%s] final flush failed: %v", r.cfg.AgentID, err)
+	}
+
+	wg.Wait()
+	pending, dropped := r.queueStats()
+	if pending > 0 {
+		log.Printf("[agent:%s] exit with %d pending updates", r.cfg.AgentID, pending)
+	}
+	if dropped > 0 {
+		log.Printf("[agent:%s] dropped updates due to queue overflow: %d", r.cfg.AgentID, dropped)
+	}
+}
+
+func (r *Runner) runCollectorLoop(ctx context.Context, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	failures := 0
+	for {
+		snapshots, err := r.gatewayClient.Collect(ctx)
+		delay := r.cfg.GatewayPollInterval
+		if err != nil {
+			failures++
+			delay = calculateBackoff(r.cfg.GatewayPollInterval, failures, 60*time.Second)
+			log.Printf("[agent:%s] collector error (%d): %v", r.cfg.AgentID, failures, err)
+		} else {
+			failures = 0
+			r.ingestSnapshots(snapshots, time.Now().UnixMilli())
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(delay):
+		}
+	}
+}
+
+func (r *Runner) runReportLoop(ctx context.Context, wg *sync.WaitGroup) {
+	defer wg.Done()
+	ticker := time.NewTicker(r.cfg.ReportInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := r.flushOnce(ctx); err != nil {
+				log.Printf("[agent:%s] report error: %v", r.cfg.AgentID, err)
+			}
+		}
+	}
+}
+
+func (r *Runner) runHeartbeatLoop(ctx context.Context, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	if err := r.sendHeartbeat(ctx); err != nil {
+		log.Printf("[agent:%s] heartbeat error: %v", r.cfg.AgentID, err)
+	}
+
+	ticker := time.NewTicker(r.cfg.HeartbeatInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := r.sendHeartbeat(ctx); err != nil {
+				log.Printf("[agent:%s] heartbeat error: %v", r.cfg.AgentID, err)
+			}
+		}
+	}
+}
+
+func (r *Runner) ingestSnapshots(snapshots []domain.FlowSnapshot, nowMs int64) {
+	active := make(map[string]struct{}, len(snapshots))
+	updates := make([]domain.TrafficUpdate, 0, len(snapshots))
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for _, s := range snapshots {
+		active[s.ID] = struct{}{}
+
+		prev, hasPrev := r.flows[s.ID]
+		deltaUp := s.Upload
+		deltaDown := s.Download
+		if hasPrev {
+			if s.Upload >= prev.LastUpload {
+				deltaUp = s.Upload - prev.LastUpload
+			} else {
+				deltaUp = 0
+			}
+			if s.Download >= prev.LastDown {
+				deltaDown = s.Download - prev.LastDown
+			} else {
+				deltaDown = 0
+			}
+		}
+
+		r.flows[s.ID] = trackedFlow{LastUpload: s.Upload, LastDown: s.Download, LastSeenMs: nowMs}
+		if deltaUp <= 0 && deltaDown <= 0 {
+			continue
+		}
+
+		ts := s.TimestampMs
+		if ts <= 0 {
+			ts = nowMs
+		}
+
+		updates = append(updates, domain.TrafficUpdate{
+			Domain:      s.Domain,
+			IP:          s.IP,
+			Chain:       firstChain(s.Chains),
+			Chains:      s.Chains,
+			Rule:        defaultString(s.Rule, "Match"),
+			RulePayload: s.RulePayload,
+			Upload:      deltaUp,
+			Download:    deltaDown,
+			SourceIP:    s.SourceIP,
+			TimestampMs: ts,
+		})
+	}
+
+	for id, f := range r.flows {
+		if _, ok := active[id]; ok {
+			continue
+		}
+		if nowMs-f.LastSeenMs > r.cfg.StaleFlowTimeout.Milliseconds() {
+			delete(r.flows, id)
+		}
+	}
+
+	if len(updates) == 0 {
+		return
+	}
+
+	r.queue = append(r.queue, updates...)
+	if len(r.queue) > r.cfg.MaxPendingUpdates {
+		overflow := len(r.queue) - r.cfg.MaxPendingUpdates
+		r.queue = r.queue[overflow:]
+		r.dropped += int64(overflow)
+	}
+}
+
+func (r *Runner) flushOnce(ctx context.Context) error {
+	batch := r.takeBatch(r.cfg.ReportBatchSize)
+	if len(batch) == 0 {
+		return nil
+	}
+
+	payload := reportPayload{
+		BackendID:       r.cfg.BackendID,
+		AgentID:         r.cfg.AgentID,
+		AgentVersion:    config.AgentVersion,
+		ProtocolVersion: config.AgentProtocolVersion,
+		Updates:         batch,
+	}
+
+	if err := r.postJSON(ctx, "/agent/report", payload); err != nil {
+		r.requeueFront(batch)
+		return err
+	}
+	return nil
+}
+
+func (r *Runner) sendHeartbeat(ctx context.Context) error {
+	payload := heartbeatPayload{
+		BackendID:       r.cfg.BackendID,
+		AgentID:         r.cfg.AgentID,
+		Hostname:        r.hostname,
+		Version:         config.AgentVersion,
+		AgentVersion:    config.AgentVersion,
+		ProtocolVersion: config.AgentProtocolVersion,
+		GatewayType:     r.cfg.GatewayType,
+		GatewayURL:      r.cfg.GatewayEndpoint,
+	}
+	return r.postJSON(ctx, "/agent/heartbeat", payload)
+}
+
+func (r *Runner) postJSON(ctx context.Context, path string, payload interface{}) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.cfg.ServerAPIBase+path, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+r.cfg.BackendToken)
+
+	resp, err := r.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
+
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+	msg := string(bytes.TrimSpace(respBody))
+	if msg == "" {
+		msg = resp.Status
+	}
+	return fmt.Errorf("server http %d: %s", resp.StatusCode, msg)
+}
+
+func (r *Runner) takeBatch(limit int) []domain.TrafficUpdate {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.queue) == 0 {
+		return nil
+	}
+	if limit > len(r.queue) {
+		limit = len(r.queue)
+	}
+	out := make([]domain.TrafficUpdate, limit)
+	copy(out, r.queue[:limit])
+	r.queue = r.queue[limit:]
+	return out
+}
+
+func (r *Runner) requeueFront(batch []domain.TrafficUpdate) {
+	if len(batch) == 0 {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	newQueue := make([]domain.TrafficUpdate, 0, len(batch)+len(r.queue))
+	newQueue = append(newQueue, batch...)
+	newQueue = append(newQueue, r.queue...)
+
+	if len(newQueue) > r.cfg.MaxPendingUpdates {
+		overflow := len(newQueue) - r.cfg.MaxPendingUpdates
+		newQueue = newQueue[overflow:]
+		r.dropped += int64(overflow)
+	}
+	r.queue = newQueue
+}
+
+func (r *Runner) queueStats() (pending int, dropped int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.queue), r.dropped
+}
+
+func firstChain(chains []string) string {
+	if len(chains) == 0 {
+		return "DIRECT"
+	}
+	if strings.TrimSpace(chains[0]) == "" {
+		return "DIRECT"
+	}
+	return strings.TrimSpace(chains[0])
+}
+
+func defaultString(v string, fallback string) string {
+	if strings.TrimSpace(v) == "" {
+		return fallback
+	}
+	return strings.TrimSpace(v)
+}
+
+func calculateBackoff(base time.Duration, failures int, max time.Duration) time.Duration {
+	if failures <= 0 {
+		return base
+	}
+	delay := base
+	for i := 0; i < failures; i++ {
+		delay *= 2
+		if delay >= max {
+			return max
+		}
+	}
+	return delay
+}

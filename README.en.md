@@ -67,6 +67,7 @@ It is a lightweight analytics dashboard designed for modern gateway environments
 
 - [✨ Features](#-features)
 - [🚀 Quick Start](#-quick-start)
+- [🤖 Agent Deployment](#-agent-deployment)
 - [📖 First Use](#-first-use)
 - [🔧 Port Conflict Resolution](#-port-conflict-resolution)
 - [🐳 Docker Configuration](#-docker-configuration)
@@ -237,6 +238,17 @@ Open <http://localhost:3000> to configure.
 > In source mode: collector listens on `3001/3002`, web listens on `3000` by default.  
 > If you changed `API_PORT` (not 3001), set `API_URL` accordingly (for example `API_URL=http://localhost:4001`) so web `/api` rewrite targets the correct API.  
 > `apps/collector/.env.local` takes precedence over `apps/collector/.env`.
+
+## 🤖 Agent Deployment
+
+Use Agent mode when you want one centralized Neko Master service and multiple remote devices collecting local gateway data.
+
+- Overview: `docs/agent/overview.md`
+- Quick Start: `docs/agent/quick-start.md`
+- Install: `docs/agent/install.md`
+- Config: `docs/agent/config.md`
+- Release Flow: `docs/agent/release.md`
+- Troubleshooting: `docs/agent/troubleshooting.md`
 
 ## 📖 First Use
 
@@ -414,6 +426,8 @@ Additional recommendations:
 5. MMDB files are large and are not bundled in the image. Download and place them in `./geoip` with fixed names:
    `GeoLite2-City.mmdb`, `GeoLite2-ASN.mmdb` (required), and `GeoLite2-Country.mmdb` (optional).
    Recommended source: <https://github.com/P3TERX/GeoLite.mmdb>.
+
+> Advanced Agent details (install, config, release, compatibility) are maintained under `docs/agent/*`.
 
 ## 🌐 Reverse Proxy & Tunnel
 

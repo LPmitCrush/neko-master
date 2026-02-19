@@ -118,3 +118,11 @@ export function getGatewayBaseUrl(url: string): string {
     .replace(/\/connections\/?$/, '')
     .replace(/\/$/, '');
 }
+
+/**
+ * 判断是否为 Agent 被动上报后端
+ * 约定：backend.url 以 agent:// 开头
+ */
+export function isAgentBackendUrl(url: string): boolean {
+  return /^agent:\/\//i.test((url || '').trim());
+}

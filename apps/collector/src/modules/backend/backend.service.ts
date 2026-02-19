@@ -5,6 +5,7 @@
 
 import type { StatsDatabase } from '../../db.js';
 import type { RealtimeStore } from '../../realtime.js';
+import { randomBytes } from 'node:crypto';
 import type {
   BackendConfig,
   CreateBackendInput,
@@ -14,7 +15,9 @@ import type {
   TestConnectionInput,
   TestConnectionResult,
   CreateBackendResult,
+  RotateAgentTokenResult,
 } from './backend.types.js';
+import { isAgentBackendUrl } from '@neko-master/shared';
 
 import type { AuthService } from '../auth/auth.service.js';
 
@@ -34,10 +37,17 @@ function maskUrl(url: string): string {
   }
 }
 
+function generateAgentBackendToken(): string {
+  return `ag_${randomBytes(24).toString('base64url')}`;
+}
+
 export class BackendService {
   private healthStatus = new Map<number, BackendHealthInfo>();
   private healthCheckInterval: NodeJS.Timeout | null = null;
-  private readonly HEALTH_CHECK_INTERVAL_MS = 30000; // 30 seconds
+  private readonly HEALTH_CHECK_INTERVAL_MS = Math.max(
+    5_000,
+    Number.parseInt(process.env.BACKEND_HEALTH_CHECK_INTERVAL_MS || '30000', 10) || 30_000,
+  );
 
   constructor(
     private db: StatsDatabase,
@@ -85,9 +95,21 @@ export class BackendService {
    */
   private async runHealthChecks(): Promise<void> {
     const backends = this.db.getListeningBackends();
+    const now = Date.now();
     
     for (const backend of backends) {
       try {
+        if (isAgentBackendUrl(backend.url)) {
+          const health = this.buildAgentHealthStatus(backend.id, now);
+
+          const prevHealth = this.healthStatus.get(backend.id);
+          if (prevHealth?.status !== health.status) {
+            console.log(`[BackendService] Health check for ${backend.name}: ${health.status}${health.message ? ` - ${health.message}` : ''}`);
+          }
+          this.healthStatus.set(backend.id, health);
+          continue;
+        }
+
         const startTime = Date.now();
         const result = await this.testConnection({
           url: backend.url,
@@ -126,6 +148,16 @@ export class BackendService {
    * Attach health status to backend response
    */
   private attachHealthStatus(backend: BackendResponse): BackendResponse {
+    if (isAgentBackendUrl(backend.url)) {
+      const dynamicHealth = this.buildAgentHealthStatus(
+        backend.id,
+        Date.now(),
+        this.getAgentManualTestTimeoutMs(),
+      );
+      this.healthStatus.set(backend.id, dynamicHealth);
+      return { ...backend, health: dynamicHealth };
+    }
+
     const health = this.healthStatus.get(backend.id);
     if (health) {
       return { ...backend, health };
@@ -204,12 +236,17 @@ export class BackendService {
    */
   createBackend(input: CreateBackendInput): CreateBackendResult {
     const { name, url, token, type = 'clash' } = input;
+    const isAgentMode = isAgentBackendUrl(url);
+    const normalizedToken = (token || '').trim();
+    const finalToken = isAgentMode
+      ? (normalizedToken || generateAgentBackendToken())
+      : normalizedToken;
     
     // Check if this is the first backend
     const existingBackends = this.db.getAllBackends();
     const isFirstBackend = existingBackends.length === 0;
     
-    const id = this.db.createBackend({ name, url, token, type });
+    const id = this.db.createBackend({ name, url, token: finalToken, type });
     
     // If this is the first backend, automatically set it as active
     if (isFirstBackend) {
@@ -217,14 +254,42 @@ export class BackendService {
       console.log(`[API] First backend created, automatically set as active: ${name} (ID: ${id})`);
     }
     
-    return { id, isActive: isFirstBackend, message: 'Backend created successfully' };
+    return {
+      id,
+      isActive: isFirstBackend,
+      message: 'Backend created successfully',
+      agentToken: isAgentMode ? finalToken : undefined,
+    };
   }
 
   /**
    * Update a backend
    */
   updateBackend(id: number, input: UpdateBackendInput): { message: string } {
+    const existing = this.db.getBackend(id);
+    if (!existing) {
+      throw new Error('Backend not found');
+    }
+
+    const prevAgentMode = isAgentBackendUrl(existing.url);
+    const nextUrl = typeof input.url === 'string' ? input.url : existing.url;
+    const nextAgentMode = isAgentBackendUrl(nextUrl);
+
     this.db.updateBackend(id, input);
+
+    if (prevAgentMode && !nextAgentMode) {
+      this.db.clearAgentHeartbeat(id);
+      this.healthStatus.delete(id);
+    }
+
+    if (!prevAgentMode && nextAgentMode) {
+      this.healthStatus.set(id, {
+        status: 'unknown',
+        lastChecked: Date.now(),
+        message: 'Waiting for first agent heartbeat',
+      });
+    }
+
     return { message: 'Backend updated successfully' };
   }
 
@@ -234,6 +299,31 @@ export class BackendService {
   deleteBackend(id: number): { message: string } {
     this.db.deleteBackend(id);
     return { message: 'Backend deleted successfully' };
+  }
+
+  rotateAgentToken(id: number): RotateAgentTokenResult {
+    const backend = this.db.getBackend(id);
+    if (!backend) {
+      throw new Error('Backend not found');
+    }
+    if (!isAgentBackendUrl(backend.url)) {
+      throw new Error('Token rotation is only supported for agent mode backends');
+    }
+
+    const nextToken = generateAgentBackendToken();
+    this.db.updateBackend(id, { token: nextToken });
+    this.db.clearAgentHeartbeat(id);
+
+    this.healthStatus.set(id, {
+      status: 'unknown',
+      lastChecked: Date.now(),
+      message: 'Agent token rotated. Waiting for new heartbeat',
+    });
+
+    return {
+      message: 'Agent token rotated successfully',
+      agentToken: nextToken,
+    };
   }
 
   /**
@@ -271,6 +361,16 @@ export class BackendService {
       throw new Error('Backend not found');
     }
 
+    if (isAgentBackendUrl(backend.url)) {
+      const health = this.buildAgentHealthStatus(id, Date.now(), this.getAgentManualTestTimeoutMs());
+      this.healthStatus.set(id, health);
+
+      return {
+        success: health.status === 'healthy',
+        message: health.message || 'Agent status unavailable',
+      };
+    }
+
     return this.testConnection({
       url: backend.url,
       token: backend.token,
@@ -283,12 +383,61 @@ export class BackendService {
    */
   async testConnection(input: TestConnectionInput): Promise<TestConnectionResult> {
     const { url, token, type = 'clash' } = input;
+
+    if (isAgentBackendUrl(url)) {
+      return { success: true, message: 'Agent mode backend configured (use backend test by id for realtime online status)' };
+    }
     
     if (type === 'surge') {
       return this.testSurgeConnection(url, token);
     }
     
     return this.testClashConnection(url, token);
+  }
+
+  private getAgentHeartbeatTimeoutMs(): number {
+    return Math.max(
+      15_000,
+      Number.parseInt(process.env.AGENT_HEARTBEAT_TIMEOUT_MS || '30000', 10) || 30_000,
+    );
+  }
+
+  private getAgentManualTestTimeoutMs(): number {
+    return Math.max(
+      3_000,
+      Number.parseInt(process.env.AGENT_MANUAL_TEST_TIMEOUT_MS || '8000', 10) || 8_000,
+    );
+  }
+
+  private buildAgentHealthStatus(
+    backendId: number,
+    now = Date.now(),
+    timeoutMsOverride?: number,
+  ): BackendHealthInfo {
+    const heartbeat = this.db.getAgentHeartbeat(backendId);
+    const timeoutMs = timeoutMsOverride ?? this.getAgentHeartbeatTimeoutMs();
+
+    if (!heartbeat) {
+      return {
+        status: 'unknown',
+        lastChecked: now,
+        message: 'Waiting for first agent heartbeat',
+      };
+    }
+
+    const lastSeenMs = new Date(heartbeat.lastSeen).getTime();
+    const ageMs = Number.isFinite(lastSeenMs) ? Math.max(0, now - lastSeenMs) : Number.POSITIVE_INFINITY;
+    const ageText = Number.isFinite(ageMs) ? `${Math.round(ageMs / 1000)}s ago` : 'unknown';
+    const timeoutText = `${Math.round(timeoutMs / 1000)}s`;
+    const isOnline = Number.isFinite(ageMs) && ageMs <= timeoutMs;
+
+    return {
+      status: isOnline ? 'healthy' : 'unhealthy',
+      lastChecked: now,
+      message: isOnline
+        ? `Agent ${heartbeat.agentId} online (last seen ${ageText})`
+        : `Agent offline (last seen ${ageText}, timeout ${timeoutText})`,
+    };
   }
 
   /**

@@ -46,6 +46,17 @@ export interface BackendConfig {
   updated_at: string;
 }
 
+export interface AgentHeartbeat {
+  backendId: number;
+  agentId: string;
+  hostname?: string;
+  version?: string;
+  gatewayType?: string;
+  gatewayUrl?: string;
+  remoteIP?: string;
+  lastSeen: string;
+}
+
 function normalizeIPStatsGeoIP(items: IPStats[]): IPStats[] {
   return items.map((item) => {
     const normalizedGeoIP = normalizeGeoIP(item.geoIP as unknown);
@@ -941,6 +952,68 @@ export class StatsDatabase {
   deleteBackend(id: number) { this.repos.backend.deleteBackend(id); }
   deleteBackendData(id: number) { this.repos.backend.deleteBackendData(id); }
   getGlobalSummary() { return this.repos.backend.getGlobalSummary(); }
+
+  upsertAgentHeartbeat(input: {
+    backendId: number;
+    agentId: string;
+    hostname?: string;
+    version?: string;
+    gatewayType?: string;
+    gatewayUrl?: string;
+    remoteIP?: string;
+    lastSeen?: string;
+  }): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO agent_heartbeats (
+        backend_id, agent_id, hostname, version, gateway_type, gateway_url, remote_ip, last_seen, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(backend_id) DO UPDATE SET
+        agent_id = excluded.agent_id,
+        hostname = excluded.hostname,
+        version = excluded.version,
+        gateway_type = excluded.gateway_type,
+        gateway_url = excluded.gateway_url,
+        remote_ip = excluded.remote_ip,
+        last_seen = excluded.last_seen,
+        updated_at = CURRENT_TIMESTAMP
+    `);
+
+    const lastSeen = input.lastSeen || new Date().toISOString();
+    stmt.run(
+      input.backendId,
+      input.agentId,
+      input.hostname || null,
+      input.version || null,
+      input.gatewayType || null,
+      input.gatewayUrl || null,
+      input.remoteIP || null,
+      lastSeen,
+    );
+  }
+
+  getAgentHeartbeat(backendId: number): AgentHeartbeat | undefined {
+    const stmt = this.db.prepare(`
+      SELECT
+        backend_id as backendId,
+        agent_id as agentId,
+        hostname,
+        version,
+        gateway_type as gatewayType,
+        gateway_url as gatewayUrl,
+        remote_ip as remoteIP,
+        last_seen as lastSeen
+      FROM agent_heartbeats
+      WHERE backend_id = ?
+      LIMIT 1
+    `);
+    return stmt.get(backendId) as AgentHeartbeat | undefined;
+  }
+
+  clearAgentHeartbeat(backendId: number): void {
+    const stmt = this.db.prepare('DELETE FROM agent_heartbeats WHERE backend_id = ?');
+    stmt.run(backendId);
+  }
 
   // Auth
   getAuthConfig() { return this.repos.auth.getAuthConfig(); }

@@ -1,6 +1,7 @@
 import { config } from 'dotenv';
 import path from 'path';
 import fs from 'fs';
+import { isAgentBackendUrl } from '@neko-master/shared';
 
 // Load .env.local if it exists (takes precedence over .env, but not shell)
 const envLocalPath = path.join(process.cwd(), '.env.local');
@@ -58,7 +59,15 @@ async function main() {
 
   // Initialize API server
   console.log('[Main] Starting API server on port', API_PORT);
-  apiServer = new APIServer(API_PORT, db, realtimeStore, policySyncService);
+  apiServer = new APIServer(
+    API_PORT,
+    db,
+    realtimeStore,
+    policySyncService,
+    (backendId: number) => {
+      wsServer.broadcastStats(backendId);
+    },
+  );
   apiServer.start();
 
   // Start backend management loop
@@ -108,9 +117,10 @@ async function manageBackends() {
     for (const backend of backends) {
       const existingCollector = collectors.get(backend.id);
       const lastConfig = lastBackendConfigs.get(backend.id);
+      const isAgentBackend = isAgentBackendUrl(backend.url);
 
       // Check if we need to start or restart this backend connection
-      const needsStart = backend.listening && backend.enabled && !existingCollector;
+      const needsStart = backend.listening && backend.enabled && !existingCollector && !isAgentBackend;
       const needsRestart = existingCollector && lastConfig && (
         lastConfig.url !== backend.url ||
         lastConfig.token !== backend.token ||
@@ -125,7 +135,7 @@ async function manageBackends() {
       }
 
       if (needsStart || needsRestart) {
-        if (backend.listening && backend.enabled) {
+        if (backend.listening && backend.enabled && !isAgentBackend) {
           startCollector(backend);
         }
       }
@@ -154,6 +164,11 @@ async function manageBackends() {
 
 // Start a collector for a specific backend
 function startCollector(backend: BackendConfig) {
+  if (isAgentBackendUrl(backend.url)) {
+    console.log(`[Collector] Backend "${backend.name}" (ID: ${backend.id}) is agent mode, skip direct pulling`);
+    return;
+  }
+
   if (collectors.has(backend.id)) {
     console.log(`[Collector] Backend "${backend.name}" (ID: ${backend.id}) already has a collector running`);
     return;

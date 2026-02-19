@@ -10,7 +10,8 @@ import cors from '@fastify/cors';
 import cookie from '@fastify/cookie';
 import type { StatsDatabase } from './db.js';
 import type { RealtimeStore } from './realtime.js';
-import { buildGatewayHeaders, getGatewayBaseUrl, parseSurgeRule } from '@neko-master/shared';
+import { buildGatewayHeaders, getGatewayBaseUrl, isAgentBackendUrl, parseSurgeRule } from '@neko-master/shared';
+import type { TrafficUpdate } from './db.js';
 import { SurgePolicySyncService } from './modules/surge/surge-policy-sync.js';
 
 // Import modules
@@ -36,7 +37,40 @@ export interface AppOptions {
   logger?: boolean;
   policySyncService?: SurgePolicySyncService;
   autoListen?: boolean;
+  onTrafficIngested?: (backendId: number) => void;
 }
+
+type AgentTrafficUpdatePayload = {
+  domain?: string;
+  ip?: string;
+  chain?: string;
+  chains?: string[];
+  rule?: string;
+  rulePayload?: string;
+  upload?: number;
+  download?: number;
+  sourceIP?: string;
+  timestampMs?: number;
+};
+
+type AgentHeartbeatPayload = {
+  backendId?: number;
+  agentId?: string;
+  protocolVersion?: number;
+  agentVersion?: string;
+  hostname?: string;
+  version?: string;
+  gatewayType?: string;
+  gatewayUrl?: string;
+};
+
+type AgentReportPayload = {
+  backendId?: number;
+  agentId?: string;
+  protocolVersion?: number;
+  agentVersion?: string;
+  updates?: AgentTrafficUpdatePayload[];
+};
 
 export async function createApp(options: AppOptions) {
   const {
@@ -46,6 +80,7 @@ export async function createApp(options: AppOptions) {
     logger = false,
     policySyncService,
     autoListen = true,
+    onTrafficIngested,
   } = options;
   
   // Create Fastify instance
@@ -97,6 +132,317 @@ export async function createApp(options: AppOptions) {
     return buildGatewayHeaders(backend);
   };
 
+  const parseAgentToken = (request: { headers: Record<string, unknown> }): string => {
+    const authHeader = request.headers.authorization;
+    if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+      return authHeader.slice(7).trim();
+    }
+    const customHeader = request.headers['x-agent-token'];
+    return typeof customHeader === 'string' ? customHeader.trim() : '';
+  };
+
+  const parseBackendId = (raw: unknown): number | null => {
+    const parsed = Number.parseInt(String(raw), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+    return parsed;
+  };
+
+  const parseAgentId = (raw: unknown): string | null => {
+    const value = String(raw || '').trim().slice(0, 128);
+    return value || null;
+  };
+
+  const getMinAgentProtocolVersion = (): number => {
+    const v = Number.parseInt(process.env.MIN_AGENT_PROTOCOL_VERSION || '1', 10);
+    return Number.isFinite(v) && v > 0 ? v : 1;
+  };
+
+  const getMinAgentVersion = (): string => {
+    return String(process.env.MIN_AGENT_VERSION || '').trim();
+  };
+
+  const parseProtocolVersion = (raw: unknown): number | null => {
+    if (raw === undefined || raw === null || raw === '') return null;
+    const parsed = Number.parseInt(String(raw), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+    return parsed;
+  };
+
+  const normalizeVersion = (raw: unknown): string => {
+    return String(raw || '')
+      .trim()
+      .replace(/^agent-v/i, '')
+      .replace(/^v/i, '');
+  };
+
+  const parseVersionParts = (raw: unknown): [number, number, number] | null => {
+    const normalized = normalizeVersion(raw);
+    if (!normalized) return null;
+
+    const match = normalized.match(/^(\d+)\.(\d+)(?:\.(\d+))?/);
+    if (!match) return null;
+
+    return [
+      Number.parseInt(match[1], 10),
+      Number.parseInt(match[2], 10),
+      Number.parseInt(match[3] || '0', 10),
+    ];
+  };
+
+  const compareVersionParts = (a: [number, number, number], b: [number, number, number]): number => {
+    for (let i = 0; i < 3; i++) {
+      if (a[i] > b[i]) return 1;
+      if (a[i] < b[i]) return -1;
+    }
+    return 0;
+  };
+
+  const isAgentCompatible = (
+    body: AgentHeartbeatPayload | AgentReportPayload,
+    reply: { status: (code: number) => { send: (payload: Record<string, unknown>) => unknown } },
+  ): boolean => {
+    const requiredProtocol = getMinAgentProtocolVersion();
+    const incomingProtocol = parseProtocolVersion(body.protocolVersion) ?? 1;
+    if (incomingProtocol < requiredProtocol) {
+      reply.status(426).send({
+        error: `Agent protocol version ${incomingProtocol} is too old. Minimum required is ${requiredProtocol}.`,
+        code: 'AGENT_PROTOCOL_TOO_OLD',
+        minProtocolVersion: requiredProtocol,
+        receivedProtocolVersion: incomingProtocol,
+      });
+      return false;
+    }
+
+    const requiredVersion = getMinAgentVersion();
+    if (!requiredVersion) {
+      return true;
+    }
+
+    const incomingVersionRaw = body.agentVersion || (body as AgentHeartbeatPayload).version;
+    const requiredParts = parseVersionParts(requiredVersion);
+    const incomingParts = parseVersionParts(incomingVersionRaw);
+    if (!requiredParts || !incomingParts) {
+      reply.status(426).send({
+        error: `Agent version is missing or invalid. Minimum required is ${requiredVersion}.`,
+        code: 'AGENT_VERSION_REQUIRED',
+        minAgentVersion: requiredVersion,
+      });
+      return false;
+    }
+
+    if (compareVersionParts(incomingParts, requiredParts) < 0) {
+      reply.status(426).send({
+        error: `Agent version ${normalizeVersion(incomingVersionRaw)} is too old. Minimum required is ${requiredVersion}.`,
+        code: 'AGENT_VERSION_TOO_OLD',
+        minAgentVersion: requiredVersion,
+        receivedAgentVersion: normalizeVersion(incomingVersionRaw),
+      });
+      return false;
+    }
+
+    return true;
+  };
+
+  const sanitizeAgentTrafficUpdate = (raw: AgentTrafficUpdatePayload): TrafficUpdate | null => {
+    if (!raw || typeof raw !== 'object') return null;
+
+    const upload = Number.isFinite(raw.upload) ? Math.max(0, Math.floor(raw.upload || 0)) : 0;
+    const download = Number.isFinite(raw.download) ? Math.max(0, Math.floor(raw.download || 0)) : 0;
+    if (upload === 0 && download === 0) return null;
+
+    const rawChains = Array.isArray(raw.chains) ? raw.chains : [];
+    const chains = rawChains
+      .map((chain) => String(chain || '').trim())
+      .filter(Boolean)
+      .slice(0, 12);
+
+    const normalizedChains = chains.length > 0 ? chains : [String(raw.chain || 'DIRECT').trim() || 'DIRECT'];
+    const timestampMs = Number.isFinite(raw.timestampMs)
+      ? Math.max(0, Math.floor(raw.timestampMs || 0))
+      : Date.now();
+
+    return {
+      domain: String(raw.domain || '').trim().slice(0, 253),
+      ip: String(raw.ip || '').trim().slice(0, 64),
+      chain: normalizedChains[0] || 'DIRECT',
+      chains: normalizedChains,
+      rule: String(raw.rule || 'Match').trim().slice(0, 256) || 'Match',
+      rulePayload: String(raw.rulePayload || '').trim().slice(0, 512),
+      upload,
+      download,
+      sourceIP: String(raw.sourceIP || '').trim().slice(0, 64),
+      timestampMs,
+    };
+  };
+
+  const isAgentBackendAuthorized = (
+    backendId: number,
+    request: { headers: Record<string, unknown> },
+    reply: { status: (code: number) => { send: (payload: Record<string, unknown>) => unknown } },
+  ): backendId is number => {
+    const backend = db.getBackend(backendId);
+    if (!backend) {
+      reply.status(404).send({ error: 'Backend not found' });
+      return false;
+    }
+    if (!isAgentBackendUrl(backend.url)) {
+      reply.status(400).send({ error: 'Backend is not in agent mode (url must start with agent://)' });
+      return false;
+    }
+
+    const expected = (backend.token || '').trim();
+    if (!expected) {
+      reply.status(403).send({ error: 'Agent backend token is not configured' });
+      return false;
+    }
+
+    const provided = parseAgentToken(request);
+    if (!provided || provided !== expected) {
+      reply.status(401).send({ error: 'Invalid agent token' });
+      return false;
+    }
+    return true;
+  };
+
+  const isAgentBindingAllowed = (
+    backendId: number,
+    agentId: string,
+    reply: { status: (code: number) => { send: (payload: Record<string, unknown>) => unknown } },
+  ): boolean => {
+    const heartbeat = db.getAgentHeartbeat(backendId);
+    if (!heartbeat) {
+      return true;
+    }
+    if (heartbeat.agentId === agentId) {
+      return true;
+    }
+
+    reply.status(409).send({
+      error: `Agent token is already bound to '${heartbeat.agentId}'. Rotate token before binding '${agentId}'.`,
+      code: 'AGENT_TOKEN_ALREADY_BOUND',
+      boundAgentId: heartbeat.agentId,
+    });
+    return false;
+  };
+
+  app.post('/api/agent/heartbeat', async (request, reply) => {
+    const body = request.body as AgentHeartbeatPayload;
+    const backendId = parseBackendId(body?.backendId);
+    if (backendId === null) {
+      return reply.status(400).send({ error: 'Invalid backendId' });
+    }
+    if (!isAgentBackendAuthorized(backendId, request, reply)) {
+      return;
+    }
+    if (!isAgentCompatible(body, reply)) {
+      return;
+    }
+
+    const agentId = parseAgentId(body.agentId);
+    if (!agentId) {
+      return reply.status(400).send({ error: 'Invalid agentId' });
+    }
+    if (!isAgentBindingAllowed(backendId, agentId, reply)) {
+      return;
+    }
+    const hostname = String(body.hostname || '').trim().slice(0, 128) || undefined;
+    const version = String(body.agentVersion || body.version || '').trim().slice(0, 64) || undefined;
+    const gatewayType = String(body.gatewayType || '').trim().slice(0, 16) || undefined;
+    const gatewayUrl = String(body.gatewayUrl || '').trim().slice(0, 512) || undefined;
+    const remoteIP = request.ip || request.headers['x-forwarded-for']?.toString().split(',')[0]?.trim();
+
+    db.upsertAgentHeartbeat({
+      backendId,
+      agentId,
+      hostname,
+      version,
+      gatewayType,
+      gatewayUrl,
+      remoteIP,
+      lastSeen: new Date().toISOString(),
+    });
+
+    return { success: true, backendId, agentId, serverTime: new Date().toISOString() };
+  });
+
+  app.post('/api/agent/report', async (request, reply) => {
+    const body = request.body as AgentReportPayload;
+    const backendId = parseBackendId(body?.backendId);
+    if (backendId === null) {
+      return reply.status(400).send({ error: 'Invalid backendId' });
+    }
+    if (!isAgentBackendAuthorized(backendId, request, reply)) {
+      return;
+    }
+    if (!isAgentCompatible(body, reply)) {
+      return;
+    }
+
+    const agentId = parseAgentId(body.agentId);
+    if (!agentId) {
+      return reply.status(400).send({ error: 'Invalid agentId' });
+    }
+    if (!isAgentBindingAllowed(backendId, agentId, reply)) {
+      return;
+    }
+
+    const rawUpdates = Array.isArray(body?.updates) ? body.updates : [];
+    if (rawUpdates.length === 0) {
+      return { success: true, backendId, accepted: 0, dropped: 0 };
+    }
+
+    const maxBatchSize = Math.max(
+      1,
+      Number.parseInt(process.env.AGENT_INGEST_MAX_BATCH_SIZE || '5000', 10) || 5000,
+    );
+    const picked = rawUpdates.slice(0, maxBatchSize);
+    const updates: TrafficUpdate[] = [];
+
+    for (const update of picked) {
+      const sanitized = sanitizeAgentTrafficUpdate(update);
+      if (sanitized) updates.push(sanitized);
+    }
+
+    if (updates.length === 0) {
+      return { success: true, backendId, accepted: 0, dropped: picked.length };
+    }
+
+    db.batchUpdateTrafficStats(backendId, updates);
+    for (const update of updates) {
+      realtimeStore.recordTraffic(
+        backendId,
+        {
+          domain: update.domain,
+          ip: update.ip,
+          sourceIP: update.sourceIP,
+          chains: update.chains,
+          rule: update.rule,
+          rulePayload: update.rulePayload,
+          upload: update.upload,
+          download: update.download,
+        },
+        1,
+        update.timestampMs || Date.now(),
+      );
+    }
+
+    db.upsertAgentHeartbeat({
+      backendId,
+      agentId,
+      lastSeen: new Date().toISOString(),
+      remoteIP: request.ip || request.headers['x-forwarded-for']?.toString().split(',')[0]?.trim(),
+    });
+
+    onTrafficIngested?.(backendId);
+
+    return {
+      success: true,
+      backendId,
+      accepted: updates.length,
+      dropped: picked.length - updates.length,
+    };
+  });
+
   // Compatibility routes: Gateway APIs
   app.get('/api/gateway/proxies', async (request, reply) => {
     const backendId = getBackendIdFromQuery(request.query as Record<string, unknown>);
@@ -107,6 +453,9 @@ export async function createApp(options: AppOptions) {
     const backend = db.getBackend(backendId);
     if (!backend) {
       return reply.status(404).send({ error: 'Backend not found' });
+    }
+    if (isAgentBackendUrl(backend.url)) {
+      return reply.status(400).send({ error: 'Agent mode backend does not support gateway passthrough APIs' });
     }
 
     const gatewayBaseUrl = getGatewayBaseUrl(backend.url);
@@ -189,6 +538,9 @@ export async function createApp(options: AppOptions) {
     const backend = db.getBackend(backendId);
     if (!backend) {
       return reply.status(404).send({ error: 'Backend not found' });
+    }
+    if (isAgentBackendUrl(backend.url)) {
+      return reply.status(400).send({ error: 'Agent mode backend does not support gateway passthrough APIs' });
     }
 
     const gatewayBaseUrl = getGatewayBaseUrl(backend.url);
@@ -328,6 +680,9 @@ export async function createApp(options: AppOptions) {
     if (!backend || backend.type !== 'surge') {
       return reply.status(400).send({ error: 'Only Surge backend supports this operation' });
     }
+    if (isAgentBackendUrl(backend.url)) {
+      return reply.status(400).send({ error: 'Agent mode backend does not support this operation' });
+    }
 
     if (!policySyncService) {
       return reply.status(503).send({ error: 'Policy sync service not available' });
@@ -356,6 +711,9 @@ export async function createApp(options: AppOptions) {
     const backend = db.getBackend(backendId);
     if (!backend) {
       return reply.status(404).send({ error: 'Backend not found' });
+    }
+    if (isAgentBackendUrl(backend.url)) {
+      return reply.status(400).send({ error: 'Agent mode backend does not support gateway passthrough APIs' });
     }
 
     const gatewayBaseUrl = getGatewayBaseUrl(backend.url);
@@ -414,6 +772,8 @@ export async function createApp(options: AppOptions) {
       '/api/auth/state',
       '/api/auth/verify',
       '/api/auth/logout', // Add logout as public so we can clear cookies even if invalid
+      '/api/agent/heartbeat',
+      '/api/agent/report',
     ];
     
     // Check if route is public
@@ -473,17 +833,20 @@ export class APIServer {
   private realtimeStore: RealtimeStore;
   private port: number;
   private policySyncService?: SurgePolicySyncService;
+  private onTrafficIngested?: (backendId: number) => void;
 
   constructor(
     port: number, 
     db: StatsDatabase, 
     realtimeStore: RealtimeStore,
-    policySyncService?: SurgePolicySyncService
+    policySyncService?: SurgePolicySyncService,
+    onTrafficIngested?: (backendId: number) => void,
   ) {
     this.port = port;
     this.db = db;
     this.realtimeStore = realtimeStore;
     this.policySyncService = policySyncService;
+    this.onTrafficIngested = onTrafficIngested;
   }
 
   async start() {
@@ -492,6 +855,7 @@ export class APIServer {
       db: this.db,
       realtimeStore: this.realtimeStore,
       policySyncService: this.policySyncService,
+      onTrafficIngested: this.onTrafficIngested,
       logger: false,
     });
     return this.app;

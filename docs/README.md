@@ -5,6 +5,20 @@
 - Chinese: `docs/architecture.md`
 - English: `docs/architecture.en.md`
 
+## Agent
+
+- Index: `docs/agent/README.md`
+- Overview: `docs/agent/overview.md`
+- Quick Start: `docs/agent/quick-start.md`
+- Install: `docs/agent/install.md`
+- Config: `docs/agent/config.md`
+- Release: `docs/agent/release.md`
+- Troubleshooting: `docs/agent/troubleshooting.md`
+
+## Release
+
+- Checklist: `docs/release-checklist.md`
+
 ## Research Reports
 
 ### Kimi 2.5
