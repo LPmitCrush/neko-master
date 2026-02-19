@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-02-19
+
+### Added
+
+- **Agent mode (major update)** 🤖
+  - Introduced passive reporting via `agent://` backends for centralized panel + edge collection deployments
+  - Added Agent setup script UX with copy-ready run/install commands
+  - Added token rotation flow for controlled re-binding and immediate invalidation of old instances
+- **Agent release automation and packaging**
+  - Added GitHub Actions: `agent-build.yml` (tests/cross-build) and `agent-release.yml` (multi-arch release)
+  - Standardized release artifact naming and checksum publishing (`checksums.txt`)
+- **Agent installation and operations tooling**
+  - Upgraded installer with architecture detection, release download, checksum verification, and startup
+  - Added `nekoagent` management CLI (init/start/stop/status/logs/update/remove/uninstall)
+- **Agent documentation set**
+  - Added `docs/agent/*` (overview, quick start, install, config, release, troubleshooting)
+  - Added release checklist `docs/release-checklist.md`
+
+### Changed
+
+- Refactored backend UX for Agent: add/edit moved into dialogs, action row alignment improved
+- Improved Agent Script modal responsiveness and scroll behavior for mobile/smaller viewports
+- Locked gateway type (Clash/Surge) after creation to prevent destructive mode mutation
+
+### Security
+
+- Agent token is now system-managed: historical tokens are not re-shown; rotation generates new random token
+- Added backend token binding guard: one token cannot be reused by multiple `agentId` values
+
+### Compatibility
+
+- Added protocol/version gate support with `MIN_AGENT_PROTOCOL_VERSION` and `MIN_AGENT_VERSION`
+- Incompatible requests now return explicit codes:
+  - `AGENT_PROTOCOL_TOO_OLD`
+  - `AGENT_VERSION_REQUIRED`
+  - `AGENT_VERSION_TOO_OLD`
+
 ## [1.3.0] - 2026-02-16
 
 ### Added

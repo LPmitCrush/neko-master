@@ -7,6 +7,40 @@
 
 ## [未发布]
 
+## [1.3.1] - 2026-02-19
+
+### 新增
+
+- **Agent 模式（重大更新）** 🤖
+  - 支持通过 `agent://` 后端被动上报，适配中心化面板 + 边缘采集部署模型
+  - 新增 Agent 脚本引导，支持一键复制运行命令与安装命令
+  - 新增 Agent 令牌重置（Rotate Token）流程，支持失效旧实例并快速重绑
+- **Agent 跨平台发布与自动化**
+  - 新增 GitHub Actions：`agent-build.yml`（测试/交叉编译）与 `agent-release.yml`（多架构打包发布）
+  - 发布产物统一命名并附带 `checksums.txt`，支持 `darwin/linux` 多架构
+- **Agent 安装与运维工具链**
+  - 安装脚本升级：自动识别系统架构、下载 release、校验 checksum、安装并启动
+  - 新增 `nekoagent` 管理命令（实例初始化、启停、状态、日志、更新、移除/卸载）
+- **Agent 文档体系**
+  - 新增 `docs/agent/*`（总览、快速开始、安装、配置、发布、排障）
+  - 新增发布清单 `docs/release-checklist.md`
+
+### 变更
+
+- Agent 配置页交互重构：新增/编辑改为独立弹窗，列表布局对齐优化
+- Agent Script 弹窗支持响应式与滚动优化，适配移动端
+- Agent 类型（Clash/Surge）在创建后改为只读，避免破坏性修改
+
+### 安全
+
+- Agent token 改为系统管理：历史 token 不回显，需通过重置生成新随机 token
+- 服务端新增 Agent 绑定约束：同一 backend token 禁止被多个 `agentId` 复用
+
+### 兼容
+
+- 新增 Agent 协议与版本门禁：支持 `MIN_AGENT_PROTOCOL_VERSION` 与 `MIN_AGENT_VERSION`
+- 不兼容请求返回明确错误码：`AGENT_PROTOCOL_TOO_OLD`、`AGENT_VERSION_REQUIRED`、`AGENT_VERSION_TOO_OLD`
+
 ## [1.3.0] - 2026-02-16
 
 ### 新增
