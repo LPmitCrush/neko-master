@@ -48,6 +48,7 @@ interface LocalMmdbReaders {
 export class GeoIPService {
   private db: StatsDatabase;
   private pendingQueries: Map<string, Promise<GeoLocation | null>> = new Map();
+  private memoryGeoCache: Map<string, GeoLocation> = new Map();
   private failedIPs: Map<string, number> = new Map();
   private lastRequestTime: number = 0;
   private lastFailedIPsCleanup: number = 0;
@@ -60,12 +61,17 @@ export class GeoIPService {
   private localMmdbReaders: LocalMmdbReaders | null = null;
   private localMmdbLoadPromise: Promise<LocalMmdbReaders | null> | null = null;
   private lastLocalMmdbCheckMs: number = 0;
+  private geoLookupConfigCache:
+    | { value: GeoLookupConfig; checkedAt: number }
+    | null = null;
 
   private static FAIL_COOLDOWN_MS = 30 * 60 * 1000;
   private static MAX_QUEUE_SIZE = 100;
   private static FAILED_IPS_CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
   private static ONLINE_MIN_REQUEST_INTERVAL_MS = 100;
   private static LOCAL_MMDB_RECHECK_INTERVAL_MS = 60 * 1000;
+  private static GEO_CONFIG_CACHE_TTL_MS = 5000;
+  private static MEMORY_GEO_CACHE_MAX_ENTRIES = 50000;
   private static COUNTRY_MMDB_FILE = "GeoLite2-Country.mmdb";
 
   constructor(db: StatsDatabase) {
@@ -86,11 +92,16 @@ export class GeoIPService {
       };
     }
 
+    const memoryCached = this.memoryGeoCache.get(ip);
+    if (memoryCached) {
+      return memoryCached;
+    }
+
     const cached = this.db.getIPGeolocation(ip);
     if (cached) {
       // Cache hit should always win over previous transient failures.
       this.failedIPs.delete(ip);
-      return {
+      const geo = {
         country: cached.country,
         country_name: cached.country_name,
         city: cached.city,
@@ -100,6 +111,8 @@ export class GeoIPService {
         continent: cached.continent,
         continent_name: cached.continent_name,
       };
+      this.setMemoryGeoCache(ip, geo);
+      return geo;
     }
 
     const failedAt = this.failedIPs.get(ip);
@@ -148,7 +161,7 @@ export class GeoIPService {
 
   private getRequestIntervalMs(): number {
     try {
-      const config = this.db.getGeoLookupConfig();
+      const config = this.getGeoLookupConfig();
       const useLocal = config.provider === "local" && config.localMmdbReady !== false;
       return useLocal ? 0 : GeoIPService.ONLINE_MIN_REQUEST_INTERVAL_MS;
     } catch {
@@ -190,7 +203,7 @@ export class GeoIPService {
   }
 
   private async queryGeo(ip: string): Promise<GeoLocation | null> {
-    const config = this.db.getGeoLookupConfig();
+    const config = this.getGeoLookupConfig();
     const useLocal = config.provider === "local" && config.localMmdbReady !== false;
     if (useLocal) {
       const localResult = await this.queryLocalMMDB(ip, config);
@@ -253,6 +266,7 @@ export class GeoIPService {
           };
 
         this.db.saveIPGeolocation(ip, geo);
+        this.setMemoryGeoCache(ip, geo);
         this.failedIPs.delete(ip);
         return geo;
       } finally {
@@ -330,6 +344,7 @@ export class GeoIPService {
       };
 
       this.db.saveIPGeolocation(ip, geo);
+      this.setMemoryGeoCache(ip, geo);
       this.failedIPs.delete(ip);
       return geo;
     } catch (err) {
@@ -500,9 +515,37 @@ export class GeoIPService {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  private getGeoLookupConfig(): GeoLookupConfig {
+    const now = Date.now();
+    if (
+      this.geoLookupConfigCache &&
+      now - this.geoLookupConfigCache.checkedAt < GeoIPService.GEO_CONFIG_CACHE_TTL_MS
+    ) {
+      return this.geoLookupConfigCache.value;
+    }
+
+    const value = this.db.getGeoLookupConfig();
+    this.geoLookupConfigCache = { value, checkedAt: now };
+    return value;
+  }
+
+  private setMemoryGeoCache(ip: string, geo: GeoLocation): void {
+    this.memoryGeoCache.set(ip, geo);
+    if (this.memoryGeoCache.size <= GeoIPService.MEMORY_GEO_CACHE_MAX_ENTRIES) {
+      return;
+    }
+
+    const overflow = this.memoryGeoCache.size - GeoIPService.MEMORY_GEO_CACHE_MAX_ENTRIES;
+    for (let i = 0; i < overflow; i += 1) {
+      const oldestKey = this.memoryGeoCache.keys().next().value;
+      if (!oldestKey) break;
+      this.memoryGeoCache.delete(oldestKey);
+    }
+  }
+
   async bulkQueryIPs(ips: string[]): Promise<void> {
     const uniqueIPs = [...new Set(ips)].filter((ip) => !this.isPrivateIP(ip));
-    const config = this.db.getGeoLookupConfig();
+    const config = this.getGeoLookupConfig();
     const useLocal = config.provider === "local" && config.localMmdbReady !== false;
     const delayMs = useLocal ? 0 : 150;
 
@@ -529,7 +572,9 @@ export class GeoIPService {
     this.queue = [];
 
     this.pendingQueries.clear();
+    this.memoryGeoCache.clear();
     this.failedIPs.clear();
+    this.geoLookupConfigCache = null;
     this.localMmdbLoadPromise = null;
     this.localMmdbReaders = null;
     this.isProcessing = false;
