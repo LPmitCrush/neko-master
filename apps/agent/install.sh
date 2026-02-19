@@ -10,6 +10,44 @@ require_env() {
 	fi
 }
 
+show_intro() {
+	cat <<'EOF'
+╔════════════════════════════════════════════════════════════╗
+║                    Neko Master Agent                      ║
+╚════════════════════════════════════════════════════════════╝
+
+Neko Master is a centralized traffic analytics panel.
+Agent runs near your local gateway and reports data securely to the panel.
+
+Project:
+  https://github.com/foru17/neko-master
+
+Agent docs:
+  https://github.com/foru17/neko-master/tree/main/docs/agent
+
+EOF
+}
+
+show_plan() {
+	token_mode="not set"
+	if [ -n "$NEKO_GATEWAY_TOKEN" ]; then
+		token_mode="provided"
+	fi
+
+	cat <<EOF
+[neko-agent] install plan:
+  target:            ${os}/${arch}
+  version:           ${NEKO_AGENT_VERSION}
+  backend id:        ${NEKO_BACKEND_ID}
+  instance:          ${NEKO_INSTANCE_NAME}
+  gateway type:      ${NEKO_GATEWAY_TYPE}
+  gateway url:       ${NEKO_GATEWAY_URL}
+  gateway token:     ${token_mode}
+  install dir:       ${NEKO_INSTALL_DIR}
+  auto start:        ${NEKO_AUTO_START}
+EOF
+}
+
 download_file() {
 	url="$1"
 	output="$2"
@@ -75,6 +113,8 @@ require_env "NEKO_BACKEND_ID"
 require_env "NEKO_BACKEND_TOKEN"
 require_env "NEKO_GATEWAY_URL"
 
+show_intro
+
 NEKO_GATEWAY_TYPE="${NEKO_GATEWAY_TYPE:-clash}"
 NEKO_GATEWAY_TOKEN="${NEKO_GATEWAY_TOKEN:-}"
 NEKO_AGENT_REPO="${NEKO_AGENT_REPO:-foru17/neko-master}"
@@ -83,6 +123,8 @@ NEKO_PACKAGE_URL="${NEKO_PACKAGE_URL:-}"
 NEKO_CHECKSUMS_URL="${NEKO_CHECKSUMS_URL:-}"
 NEKO_CLI_URL="${NEKO_CLI_URL:-}"
 NEKO_INSTALL_DIR="${NEKO_INSTALL_DIR:-$HOME/.local/bin}"
+NEKO_BIN_LINK_MODE="${NEKO_BIN_LINK_MODE:-auto}"
+NEKO_LINK_DIR="${NEKO_LINK_DIR:-/usr/local/bin}"
 NEKO_LOG="${NEKO_LOG:-true}"
 NEKO_AUTO_START="${NEKO_AUTO_START:-true}"
 NEKO_INSTANCE_NAME="${NEKO_INSTANCE_NAME:-backend-${NEKO_BACKEND_ID}}"
@@ -122,6 +164,8 @@ else
 	fi
 	cli_url="https://raw.githubusercontent.com/${NEKO_AGENT_REPO}/${cli_ref}/apps/agent/nekoagent"
 fi
+
+show_plan
 
 tmp_dir="${TMPDIR:-/tmp}/neko-agent.$$"
 mkdir -p "$tmp_dir"
@@ -180,8 +224,30 @@ cli_target="$NEKO_INSTALL_DIR/nekoagent"
 mv "$cli_path" "$cli_target"
 chmod +x "$cli_target"
 
-if ! echo ":$PATH:" | grep -q ":$NEKO_INSTALL_DIR:"; then
+linked_to_path="false"
+if [ "$NEKO_BIN_LINK_MODE" != "false" ]; then
+	can_link="false"
+	if [ "$NEKO_BIN_LINK_MODE" = "true" ]; then
+		can_link="true"
+	elif [ -d "$NEKO_LINK_DIR" ] && [ -w "$NEKO_LINK_DIR" ]; then
+		can_link="true"
+	fi
+
+	if [ "$can_link" = "true" ]; then
+		if mkdir -p "$NEKO_LINK_DIR" 2>/dev/null; then
+			if ln -sf "$install_target" "$NEKO_LINK_DIR/neko-agent" 2>/dev/null &&
+				ln -sf "$cli_target" "$NEKO_LINK_DIR/nekoagent" 2>/dev/null; then
+				linked_to_path="true"
+				echo "[neko-agent] linked binaries into: $NEKO_LINK_DIR"
+			fi
+		fi
+	fi
+fi
+
+if [ "$linked_to_path" = "false" ] && ! echo ":$PATH:" | grep -q ":$NEKO_INSTALL_DIR:"; then
 	echo "[neko-agent] warning: $NEKO_INSTALL_DIR is not in PATH"
+	echo "[neko-agent] hint: use full path: $cli_target status $NEKO_INSTANCE_NAME"
+	echo "[neko-agent] hint: add PATH in shell profile: export PATH=\"$NEKO_INSTALL_DIR:\$PATH\""
 fi
 
 "$cli_target" init "$NEKO_INSTANCE_NAME" \
@@ -202,6 +268,8 @@ echo "  $cli_target stop $NEKO_INSTANCE_NAME"
 echo "  $cli_target status $NEKO_INSTANCE_NAME"
 echo "  $cli_target logs $NEKO_INSTANCE_NAME"
 echo "  $cli_target update $NEKO_INSTANCE_NAME [agent-vX.Y.Z]"
+echo "  $cli_target remove $NEKO_INSTANCE_NAME"
+echo "  $cli_target uninstall"
 
 if [ "$NEKO_AUTO_START" = "true" ]; then
 	"$cli_target" start "$NEKO_INSTANCE_NAME"

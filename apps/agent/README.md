@@ -60,6 +60,8 @@ nekoagent status backend-1
 nekoagent logs backend-1
 nekoagent restart backend-1
 nekoagent update backend-1 agent-v1.3.2
+nekoagent remove backend-1
+nekoagent uninstall
 ```
 
 Pin release version (recommended for production):

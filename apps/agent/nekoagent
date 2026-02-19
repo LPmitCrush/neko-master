@@ -59,6 +59,9 @@ Usage:
   $PROG logs <name>                   Tail logs
   $PROG list                          List configured instances
   $PROG update <name> [version]       Update agent binary and restart instance
+  $PROG remove <name>                 Remove one instance config/runtime data
+  $PROG delete <name>                 Alias of remove
+  $PROG uninstall                     Uninstall nekoagent + neko-agent binaries
 
 Config and runtime paths:
   CONFIG_DIR=$CONFIG_DIR
@@ -283,6 +286,32 @@ cmd_update() {
   log "instance '$name' updated to $version"
 }
 
+cmd_remove() {
+  name="$1"
+
+  if is_running "$name"; then
+    cmd_stop "$name"
+  fi
+
+  rm -f "$(pid_file "$name")"
+  rm -f "$(log_file "$name")"
+
+  cf="$(config_file "$name")"
+  if [ -f "$cf" ]; then
+    rm -f "$cf"
+  fi
+
+  log "instance '$name' removed"
+}
+
+cmd_uninstall() {
+  rm -f "$AGENT_BIN"
+  rm -f "$INSTALL_DIR/nekoagent"
+  rm -f "/usr/local/bin/neko-agent" "/usr/local/bin/nekoagent"
+  log "binaries removed"
+  log "note: instance config files remain in $CONFIG_DIR (use '$PROG remove <name>' if needed)"
+}
+
 main() {
   if [ "$#" -lt 1 ]; then
     usage
@@ -319,6 +348,21 @@ main() {
         exit 1
       fi
       cmd_update "$@"
+      ;;
+    remove|delete)
+      if [ "$#" -ne 1 ]; then
+        usage
+        exit 1
+      fi
+      cmd_remove "$1"
+      ;;
+    uninstall)
+      if [ "$#" -ne 0 ]; then
+        err "uninstall does not accept instance name; use '$PROG remove <name>'"
+        usage
+        exit 1
+      fi
+      cmd_uninstall
       ;;
     list)
       cmd_list

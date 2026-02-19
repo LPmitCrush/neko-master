@@ -35,6 +35,8 @@ Optional env:
 - `NEKO_PACKAGE_URL`: custom package URL override
 - `NEKO_CHECKSUMS_URL`: custom checksums URL override
 - `NEKO_INSTANCE_NAME`: instance name for `nekoagent` manager (default `backend-<id>`)
+- `NEKO_BIN_LINK_MODE`: `auto|true|false` for symlink into global bin dir (default `auto`)
+- `NEKO_LINK_DIR`: global bin dir for symlink (default `/usr/local/bin`)
 
 After install, manage agent with:
 
@@ -43,6 +45,13 @@ nekoagent status <instance>
 nekoagent logs <instance>
 nekoagent restart <instance>
 nekoagent update <instance> agent-vX.Y.Z
+nekoagent remove <instance>
+```
+
+Uninstall binaries:
+
+```bash
+nekoagent uninstall
 ```
 
 ## Manual install
