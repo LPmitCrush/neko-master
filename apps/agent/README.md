@@ -53,6 +53,15 @@ curl -fsSL https://raw.githubusercontent.com/foru17/neko-master/main/apps/agent/
         sh
 ```
 
+Installer also provides `nekoagent` manager for friendly operations:
+
+```bash
+nekoagent status backend-1
+nekoagent logs backend-1
+nekoagent restart backend-1
+nekoagent update backend-1 agent-v1.3.2
+```
+
 Pin release version (recommended for production):
 
 ```bash

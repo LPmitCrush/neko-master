@@ -81,25 +81,23 @@ NEKO_AGENT_REPO="${NEKO_AGENT_REPO:-foru17/neko-master}"
 NEKO_AGENT_VERSION="${NEKO_AGENT_VERSION:-latest}"
 NEKO_PACKAGE_URL="${NEKO_PACKAGE_URL:-}"
 NEKO_CHECKSUMS_URL="${NEKO_CHECKSUMS_URL:-}"
+NEKO_CLI_URL="${NEKO_CLI_URL:-}"
 NEKO_INSTALL_DIR="${NEKO_INSTALL_DIR:-$HOME/.local/bin}"
 NEKO_LOG="${NEKO_LOG:-true}"
 NEKO_AUTO_START="${NEKO_AUTO_START:-true}"
-NEKO_LOG_FILE="${NEKO_LOG_FILE:-$HOME/.cache/neko-agent-${NEKO_BACKEND_ID}.log}"
+NEKO_INSTANCE_NAME="${NEKO_INSTANCE_NAME:-backend-${NEKO_BACKEND_ID}}"
 
 os="$(normalize_os)"
 arch="$(normalize_arch)"
 
 if [ "$NEKO_AGENT_VERSION" = "latest" ]; then
 	release_path="releases/latest/download"
-else
-	release_path="releases/download/${NEKO_AGENT_VERSION}"
-fi
-
-if [ "$NEKO_AGENT_VERSION" = "latest" ]; then
 	asset="neko-agent_${os}_${arch}.tar.gz"
 else
+	release_path="releases/download/${NEKO_AGENT_VERSION}"
 	asset="neko-agent_${NEKO_AGENT_VERSION}_${os}_${arch}.tar.gz"
 fi
+
 checksums_asset="checksums.txt"
 
 if [ -n "$NEKO_PACKAGE_URL" ]; then
@@ -114,12 +112,24 @@ else
 	checksums_url="https://github.com/${NEKO_AGENT_REPO}/${release_path}/${checksums_asset}"
 fi
 
+if [ -n "$NEKO_CLI_URL" ]; then
+	cli_url="$NEKO_CLI_URL"
+else
+	if [ "$NEKO_AGENT_VERSION" = "latest" ]; then
+		cli_ref="main"
+	else
+		cli_ref="$NEKO_AGENT_VERSION"
+	fi
+	cli_url="https://raw.githubusercontent.com/${NEKO_AGENT_REPO}/${cli_ref}/apps/agent/nekoagent"
+fi
+
 tmp_dir="${TMPDIR:-/tmp}/neko-agent.$$"
 mkdir -p "$tmp_dir"
 trap 'rm -rf "$tmp_dir"' EXIT INT TERM
 
 archive_path="$tmp_dir/neko-agent.tar.gz"
 checksums_path="$tmp_dir/checksums.txt"
+cli_path="$tmp_dir/nekoagent"
 
 echo "[neko-agent] downloading package: $package_url"
 download_file "$package_url" "$archive_path"
@@ -163,38 +173,38 @@ install_target="$NEKO_INSTALL_DIR/neko-agent"
 mv "$binary_source" "$install_target"
 chmod +x "$install_target"
 
+echo "[neko-agent] downloading manager cli: $cli_url"
+download_file "$cli_url" "$cli_path"
+chmod +x "$cli_path"
+cli_target="$NEKO_INSTALL_DIR/nekoagent"
+mv "$cli_path" "$cli_target"
+chmod +x "$cli_target"
+
 if ! echo ":$PATH:" | grep -q ":$NEKO_INSTALL_DIR:"; then
 	echo "[neko-agent] warning: $NEKO_INSTALL_DIR is not in PATH"
 fi
 
-set -- "$install_target" \
-	--server-url "$NEKO_SERVER" \
-	--backend-id "$NEKO_BACKEND_ID" \
-	--backend-token "$NEKO_BACKEND_TOKEN" \
-	--gateway-type "$NEKO_GATEWAY_TYPE" \
-	--gateway-url "$NEKO_GATEWAY_URL" \
-	--log="$NEKO_LOG"
-
-if [ -n "$NEKO_GATEWAY_TOKEN" ]; then
-	set -- "$@" --gateway-token "$NEKO_GATEWAY_TOKEN"
-fi
+"$cli_target" init "$NEKO_INSTANCE_NAME" \
+	"NEKO_SERVER=$NEKO_SERVER" \
+	"NEKO_BACKEND_ID=$NEKO_BACKEND_ID" \
+	"NEKO_BACKEND_TOKEN=$NEKO_BACKEND_TOKEN" \
+	"NEKO_GATEWAY_TYPE=$NEKO_GATEWAY_TYPE" \
+	"NEKO_GATEWAY_URL=$NEKO_GATEWAY_URL" \
+	"NEKO_GATEWAY_TOKEN=$NEKO_GATEWAY_TOKEN" \
+	"NEKO_LOG=$NEKO_LOG"
 
 echo "[neko-agent] installed to: $install_target"
-echo "[neko-agent] run command:"
-cat <<EOF
-$install_target \\
-  --server-url "$NEKO_SERVER" \\
-  --backend-id "$NEKO_BACKEND_ID" \\
-  --backend-token "$NEKO_BACKEND_TOKEN" \\
-  --gateway-type "$NEKO_GATEWAY_TYPE" \\
-  --gateway-url "$NEKO_GATEWAY_URL" \\
-  --log="$NEKO_LOG"$(if [ -n "$NEKO_GATEWAY_TOKEN" ]; then printf " \\\n+  --gateway-token \"$NEKO_GATEWAY_TOKEN\""; fi)
-EOF
+echo "[neko-agent] management cli: $cli_target"
+echo "[neko-agent] configured instance: $NEKO_INSTANCE_NAME"
+echo "[neko-agent] common commands:"
+echo "  $cli_target start $NEKO_INSTANCE_NAME"
+echo "  $cli_target stop $NEKO_INSTANCE_NAME"
+echo "  $cli_target status $NEKO_INSTANCE_NAME"
+echo "  $cli_target logs $NEKO_INSTANCE_NAME"
+echo "  $cli_target update $NEKO_INSTANCE_NAME [agent-vX.Y.Z]"
 
 if [ "$NEKO_AUTO_START" = "true" ]; then
-	mkdir -p "$(dirname "$NEKO_LOG_FILE")"
-	nohup "$@" >"$NEKO_LOG_FILE" 2>&1 &
-	echo "[neko-agent] started in background, pid=$!, log=$NEKO_LOG_FILE"
+	"$cli_target" start "$NEKO_INSTANCE_NAME"
 else
 	echo "[neko-agent] auto-start disabled (NEKO_AUTO_START=false)"
 fi

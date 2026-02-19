@@ -34,6 +34,16 @@ Optional env:
 - `NEKO_LOG_FILE`: runtime log file path
 - `NEKO_PACKAGE_URL`: custom package URL override
 - `NEKO_CHECKSUMS_URL`: custom checksums URL override
+- `NEKO_INSTANCE_NAME`: instance name for `nekoagent` manager (default `backend-<id>`)
+
+After install, manage agent with:
+
+```bash
+nekoagent status <instance>
+nekoagent logs <instance>
+nekoagent restart <instance>
+nekoagent update <instance> agent-vX.Y.Z
+```
 
 ## Manual install
 
